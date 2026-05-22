@@ -27,7 +27,7 @@ Data → Bias baseline → Model training → Amplification ratio → SHAP → M
 
 | Metric | Definition |
 |--------|-----------|
-| **DPD** | ` P(ŷ=1 | g=female) − P(ŷ=1 | g=male) ` |
+| **DPD** | ` P(ŷ=1 / g=female) − P(ŷ=1 / g=male) ` |
 | **Amplification ratio** | ` DPD_model / DPD_data ` |
 | **Proposed threshold** | ` DPD ≤ 0.10  — research-defined, consistent with fairness literature conventions ` |
 
