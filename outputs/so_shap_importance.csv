@@ -1,0 +1,17 @@
+,mean_abs_shap
+years_code_pro,0.45261168
+years_code,0.40089518
+ed_level_enc,0.14634012
+is_student,0.10202981
+is_remote,0.090084486
+devtype_developer_full_stack,0.068523005
+devtype_developer_desktop_or_enterprise_applications,0.033345234
+devtype_engineering_manager,0.024905195
+devtype_developer_front_end,0.024801025
+devtype_developer_mobile,0.023154046
+devtype_data_scientist_or_machine_learning_specialist,0.01558411
+devtype_developer_back_end,0.013726404
+devtype_data_engineer,0.011719712
+devtype_devops_specialist,0.004397116
+devtype_security_professional,0.002917614
+is_employed,0.0

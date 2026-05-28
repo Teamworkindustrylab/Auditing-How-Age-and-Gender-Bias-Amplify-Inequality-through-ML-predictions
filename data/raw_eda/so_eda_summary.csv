@@ -1,0 +1,9 @@
+,dtype,n_unique,null_pct,sample
+Age,object,8,0.0,Under 18 years old
+Employment,object,110,0.0,"Employed, full-time"
+RemoteWork,object,3,16.25,Remote
+EdLevel,object,8,7.11,Primary/elementary school
+YearsCode,object,52,8.51,
+YearsCodePro,object,52,21.13,
+DevType,object,34,9.16,
+ConvertedCompYearly,float64,6113,64.19,
