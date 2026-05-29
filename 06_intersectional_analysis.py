@@ -1,7 +1,6 @@
 """
-=============================================================================
   NOTEBOOK 6 -- INTERSECTIONAL BIAS ANALYSIS
-=============================================================================
+
   Examines bias at the intersection of two protected attributes
   simultaneously, rather than auditing each dimension in isolation.
 
@@ -10,7 +9,6 @@
     disadvantage beyond what single-attribute audits would reveal?
 
   Dataset-specific intersections
-  --------------------------------
   SO  : age_group × experience_bracket  (age_exp_pro, already in NB2)
         Groups: young_junior / young_mid / young_senior /
                 experienced_junior / experienced_mid / experienced_senior
@@ -46,10 +44,7 @@
             outputs/so_intersectional_results.csv
             outputs/gh_intersectional_results.csv
 
-  Reference:
-    Foulds, J. R., Islam, R., Keya, K. N., & Pan, S. (2020).
-    An intersectional definition of fairness. ICDE 2020.
-=============================================================================
+    
 """
 
 import os
@@ -68,7 +63,7 @@ from sklearn.model_selection import train_test_split
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
-# ── Paths ─────────────────────────────────────────────────────────────────────
+#  Paths 
 IN_SO   = "data/preprocessed/so_preprocessed.csv"
 IN_GH   = "data/preprocessed/gh_preprocessed.csv"
 OUT     = "outputs"
@@ -101,9 +96,7 @@ SO_SINGLE_ATTR_DPD = 0.5669907974069541   # S1 age_group
 GH_SINGLE_ATTR_DPD = 0.024035369774919615  # gender
 
 
-# =============================================================================
 # HELPERS
-# =============================================================================
 
 def load_model(path):
     with open(path, "rb") as f:
@@ -191,9 +184,8 @@ def bar_chart(pos_rates, max_dpd, title, dataset_color, out_path):
     print(f"  Saved: {out_path}")
 
 
-# =============================================================================
 # STACK OVERFLOW  — age_group × experience_bracket
-# =============================================================================
+
 print("\n" + "=" * 70)
 print("STACK OVERFLOW — Intersectional Analysis: Age × Experience")
 print("  Subgroup column: age_exp_pro  (already built in NB2)")
@@ -253,9 +245,9 @@ bar_chart(
 )
 
 
-# =============================================================================
+
 # GITHUB OSS  — gender × experience_bracket
-# =============================================================================
+
 print("\n" + "=" * 70)
 print("GITHUB OSS — Intersectional Analysis: Gender × Experience")
 print("  Deriving experience bracket from pro_experience_yrs")
@@ -325,9 +317,8 @@ bar_chart(
 )
 
 
-# =============================================================================
 # COMBINED HEATMAP  — side-by-side summary
-# =============================================================================
+
 
 fig, axes = plt.subplots(1, 2, figsize=(14, 4), facecolor=PALETTE["bg"])
 fig.suptitle(

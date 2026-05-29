@@ -75,19 +75,20 @@ PALETTE = {
 # SECTION 1 — STACK OVERFLOW 2024
 
 # ── 1.1  Parsing raw CSV ────────────────────────────────────────────────────────
+"""
+The SO CSV wraps every data row in an outer quote. Some rows contain
+unescaped inner quotes that break standard parsers, so we read it with
+csv.reader and extract the columns we need by positional index.
 
-#  The SO CSV wraps every data row in an outer quote. Some rows contain
-#  unescaped inner quotes that break standard parsers, so we read it with
-#  csv.reader and extract the columns we need by positional index.
-#
-#  Columns used in this project:
-#    row[0] -> inner CSV -> Age[2], Employment[3], RemoteWork[4],
-#                         EdLevel[7], YearsCode[?], YearsCodePro[?], DevType[?]
-#    row[-2] -> ConvertedCompYearly
+Columns used in this project:
+    row[0] -> inner CSV -> Age[2], Employment[3], RemoteWork[4],
+                         EdLevel[7], YearsCode[?], YearsCodePro[?], DevType[?]
+    row[-2] -> ConvertedCompYearly
 
+"""
 def _parse_so(path: str) -> pd.DataFrame:
     """
-    Parse SO survey CSV and return a DataFrame with the columns we care about.
+    So we need to parse SO survey CSV and return a DataFrame with the columns we care about.
     
     Because the inner-row quoting is inconsistent, we first read the header
     to detect column positions, then extract values positionally.
@@ -234,14 +235,16 @@ def eda_so(df: pd.DataFrame) -> pd.DataFrame:
 
 def _classify_age(age_val: str) -> str:
     """
-    Classify an Age string as 'young (< 35)' or 'experienced (35+)'.
+    Classify an Age string as "young (< 35)" or "experienced (35+)".
 
     Handles the two formats seen across SO survey exports:
-      • "18-24 years old"  / "25-34 years old"  (2022-2024 style)
-      • "18 - 24 years old"                      (spaced variant)
+      • "18-24 years old"  / "25-34 years old"  
+      • "18 - 24 years old"               
       • "Under 18 years old"
+      
     Strategy: extract the *upper* bound of the range and threshold at 35.
-    Anything whose upper bound is <= 34 is 'young'; everything else 'experienced'.
+    Anything whose upper bound is <= 34 is "young", everything else "experienced".
+    
     """
     import re
     s = str(age_val).strip().lower()
@@ -372,9 +375,9 @@ def plot_so_years(df: pd.DataFrame):
     print(f"[SO]   Saved → {out}")
 
 
-# =============================================================================
+
 # SECTION 2 — GITHUB OSS SURVEY 2017
-# =============================================================================
+
 
 def load_gh() -> pd.DataFrame:
     if os.path.exists(GH_PATH):
@@ -518,9 +521,7 @@ def plot_gh_gender_paid(df: pd.DataFrame):
     print(f"[GH]   Saved → {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 if __name__ == "__main__":
     print("\n" + "█"*65)

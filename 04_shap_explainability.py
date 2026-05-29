@@ -1,7 +1,7 @@
 """
-=============================================================================
+
   NOTEBOOK 4 -- EXPLAINABILITY (SHAP)
-=============================================================================
+  
   Inputs  : data/preprocessed/so_preprocessed.csv
             data/preprocessed/gh_preprocessed.csv
             outputs/models/so_xgboost.pkl
@@ -14,16 +14,15 @@
             outputs/nb4_shap_compare.png
 
   Why separate?
-  -------------
-  SHAP TreeExplainer on XGBoost is slow. Keeping it separate means you
+
+  SHAP TreeExplainer on XGBoost is slow. Keeping it separate means we
   can re-run explainability without re-training and vice versa.
 
   Key interpretation
-  ------------------
   For SO: if years_code / years_code_pro dominate importance it means
   the model uses seniority as a strong salary proxy -- amplifying the
   age-based gap measured in NB3.
-=============================================================================
+
 """
 
 import os
@@ -59,9 +58,7 @@ GH_FEATURE_COLS = [
 ]
 
 
-# =============================================================================
 # HELPERS
-# =============================================================================
 
 def _load_model(path: str):
     with open(path, "rb") as f:
@@ -146,7 +143,7 @@ def _save_shap_plots(importance: pd.Series, shap_array: np.ndarray,
     top_n   = importance.head(12)
     n_feats = len(top_n)
 
-    # --- Panel A: bar chart ---------------------------------------------------
+    #  bar chart 
     fig_bar, ax_bar = plt.subplots(figsize=(8, max(4, n_feats * 0.4)),
                                    facecolor=PALETTE["bg"])
     bar_colors = [color if any(k in c for k in highlight_keys) else "#4a4a4a"
@@ -163,7 +160,7 @@ def _save_shap_plots(importance: pd.Series, shap_array: np.ndarray,
     ax_bar.legend(fontsize=8)
     fig_bar.tight_layout()
 
-    # --- Panel B: SHAP summary (beeswarm) ------------------------------------
+    #  SHAP summary 
     # Draw into its own figure via show=False, then save separately.
     # We composite them side by side using a wider figure.
     import io
@@ -186,12 +183,12 @@ def _save_shap_plots(importance: pd.Series, shap_array: np.ndarray,
     plt.close(fig_bee)
     buf.seek(0)
 
-    # --- Composite -----------------------------------------------------------
+    #  Composite 
     from PIL import Image
     img_bar = _fig_to_pil(fig_bar)
     img_bee = Image.open(buf)
 
-    # Resize to same height
+    # same height
     h = max(img_bar.height, img_bee.height)
     img_bar = img_bar.resize(
         (int(img_bar.width * h / img_bar.height), h), Image.LANCZOS
@@ -227,9 +224,7 @@ def _pil_available() -> bool:
         return False
 
 
-# =============================================================================
 # SECTION 1 -- STACK OVERFLOW 2024
-# =============================================================================
 
 def so_shap_analysis() -> pd.Series:
     print("\n" + "=" * 60)
@@ -276,9 +271,8 @@ def so_shap_analysis() -> pd.Series:
     return importance
 
 
-# =============================================================================
 # SECTION 2 -- GITHUB OSS SURVEY 2017
-# =============================================================================
+
 
 def gh_shap_analysis() -> pd.Series:
     print("\n" + "=" * 60)
@@ -340,9 +334,8 @@ def _save_bar_only(importance: pd.Series, color: str, highlight_keys: list,
     print(f"  Saved (bar only, install Pillow for beeswarm) -> {out_path}")
 
 
-# =============================================================================
 # CROSS-DATASET COMPARISON
-# =============================================================================
+
 
 def plot_shap_comparison(so_imp: pd.Series, gh_imp: pd.Series):
     so_n = (so_imp / so_imp.sum()).head(10)
@@ -372,9 +365,7 @@ def plot_shap_comparison(so_imp: pd.Series, gh_imp: pd.Series):
     print(f"\n  Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 if __name__ == "__main__":
     print("\n" + "=" * 65)

@@ -1,7 +1,7 @@
 """
-=============================================================================
+
   NOTEBOOK 3 -- BIAS BASELINE & AMPLIFICATION MEASUREMENT
-=============================================================================
+
   Inputs  : data/preprocessed/so_preprocessed.csv
             data/preprocessed/gh_preprocessed.csv
 
@@ -21,7 +21,7 @@
 
   Amplification ratio = model_max_gap / data_max_gap
   >1.0 means the model widens the gap that already existed in the data.
-=============================================================================
+
 """
 
 import os
@@ -265,9 +265,9 @@ class SOBiasAmplification:
         return amp_results
 
 
-# =============================================================================
+
 # SECTION 2 -- GITHUB OSS SURVEY 2017
-# =============================================================================
+
 
 class GHBiasAmplification:
 
@@ -355,9 +355,9 @@ class GHBiasAmplification:
         return results
 
 
-# =============================================================================
+
 # COMPARISON CHART
-# =============================================================================
+
 
 def plot_amplification_comparison(so: SOBiasAmplification,
                                   gh: GHBiasAmplification):
@@ -417,9 +417,8 @@ def plot_amplification_comparison(so: SOBiasAmplification,
     print(f"\n  Saved -> {out}")
 
 
-# =============================================================================
+
 # MAIN
-# =============================================================================
 
 if __name__ == "__main__":
     print("\n" + "=" * 65)

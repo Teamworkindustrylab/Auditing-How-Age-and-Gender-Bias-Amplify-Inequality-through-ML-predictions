@@ -8,17 +8,30 @@ Do machine learning classifiers merely reflect demographic inequality, or do the
 
 | Dataset | N | Target | Sensitive attributes |
 |---------|---|--------|----------------------|
-| [Stack Overflow Developer Survey 2024](https://survey.stackoverflow.co/2024) | ~65,000 | Salary above/below median | Gender, Age |
+| [Stack Overflow Developer Survey 2024](https://www.kaggle.com/datasets/berkayalan/stack-overflow-annual-developer-survey-2024) | ~65,000 | Salary above/below median | Gender, Age |
 | [GitHub Open Source Survey 2017](https://github.com/github/open-source-survey) | ~5,400 | OSS participation | Gender, Age |
 
 ---
 
+## SETUP
+
+1.Download SO survey from: https://www.kaggle.com/datasets/berkayalan/stack-overflow-annual-developer-survey-2024
+                        1.1. "Download Full Data Set" -> unzip
+                        1.2. use survey_results_public.csv  (65,439 rows)
+                        
+Place SO survey at:  data/survey_results_public.csv
+
+2. GitHub OSS Survey loads automatically from the web.
+
+3. Run requrements.txt to install dependencies:  pip install -r requirements.txt 
+
+
 ## Pipeline
 
 ```
-Data → Bias baseline → Model training → Amplification ratio → SHAP → Mitigation → Compliance audit
-                       (LR + XGBoost)   DPD_model/DPD_data            Reweighing
-                                        ratio > 1 = worse             Threshold calibration
+Data -> Bias baseline -> Model training -> Amplification ratio -> SHAP -> Mitigation -> Compliance audit
+                         (LR + XGBoost)    DPD_model/DPD_data             Reweighing
+                                           ratio > 1 = worse          Threshold calibration
 ```
 
 ---
@@ -36,7 +49,10 @@ Data → Bias baseline → Model training → Amplification ratio → SHAP → M
 ## Install
 
 ```bash
-pip install pandas numpy scikit-learn xgboost shap aif360 fairlearn matplotlib seaborn jupyter
+Run requrements.txt to install dependencies:  
+
+pip install -r requirements.txt 
+
 ```
 
 ---

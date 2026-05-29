@@ -1,7 +1,7 @@
 """
-=============================================================================
+
   NOTEBOOK 2 -- FEATURE ENGINEERING & PREPROCESSING
-=============================================================================
+
   Inputs  : data/so_raw.csv   (from Notebook 1)
             data/gh_raw.csv   (from Notebook 1)
 
@@ -20,7 +20,7 @@
   YearsCode / YearsCodePro : ordinal string -> float midpoint
   DevType                  : multi-select semicolon -> top-N binary flags
   Target                   : above_median_salary (binary)
-=============================================================================
+
 """
 
 import os
@@ -58,9 +58,8 @@ TOP_DEVTYPES = [
 ]
 
 
-# =============================================================================
+
 # SHARED UTILITY
-# =============================================================================
 
 def _classify_age(age_val) -> str:
     """
@@ -79,9 +78,7 @@ def _classify_age(age_val) -> str:
     return "young" if max(nums) <= 34 else "experienced"
 
 
-# =============================================================================
 # SECTION 1 -- STACK OVERFLOW 2024
-# =============================================================================
 
 class SOFeatureEngineering:
 
@@ -114,7 +111,7 @@ class SOFeatureEngineering:
         print(f"[SO FE] Columns: {list(self.df.columns)}")
         return self
 
-    # -- Target ----------------------------------------------------------------
+    # Target
     def _build_target(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df["ConvertedCompYearly"] = pd.to_numeric(
@@ -142,12 +139,12 @@ class SOFeatureEngineering:
               f"median salary ${median_sal:,.0f}")
         return df
 
-    # -- Sensitive attributes --------------------------------------------------
+    #  Sensitive attributes 
     def _build_sensitive(self, df: pd.DataFrame) -> pd.DataFrame:
         # S1 -- age only
         df["age_group"] = df["Age"].apply(_classify_age)
 
-        # Debug: show classification result
+        # classification result
         vc = df["age_group"].value_counts()
         print(f"\n[SO FE] age_group distribution:")
         for k, n in vc.items():
@@ -191,7 +188,7 @@ class SOFeatureEngineering:
 
         return df
 
-    # -- Education -------------------------------------------------------------
+    # Education 
     def _encode_education(self, df: pd.DataFrame) -> pd.DataFrame:
         def _ed(v):
             v = str(v).lower()
@@ -204,7 +201,7 @@ class SOFeatureEngineering:
         df["ed_level_enc"] = df["ed_level_enc"].fillna(median_ed)
         return df
 
-    # -- Employment / remote ---------------------------------------------------
+    #  Employment / remote 
     def _encode_employment(self, df: pd.DataFrame) -> pd.DataFrame:
         df["is_employed"] = (
             df["Employment"].fillna("").str.contains(
@@ -219,7 +216,7 @@ class SOFeatureEngineering:
         ).astype(int)
         return df
 
-    # -- DevType flags ---------------------------------------------------------
+    #  DevType flags 
     def _encode_devtype(self, df: pd.DataFrame) -> pd.DataFrame:
         df["DevType"] = df["DevType"].fillna("").astype(str)
         slugs = []
@@ -236,7 +233,7 @@ class SOFeatureEngineering:
         print(f"[SO FE] DevType flags: {slugs}")
         return df
 
-    # -- Orchestrate -----------------------------------------------------------
+    #  Orchestrate 
     def engineer(self) -> "SOFeatureEngineering":
         df = self.df.copy()
         df = self._build_target(df)
@@ -254,7 +251,7 @@ class SOFeatureEngineering:
                 "years_code", "years_code_pro"]
         return base + self.devtype_cols
 
-    # -- Save ------------------------------------------------------------------
+    # Save 
     def save(self, path: str = f"{OUT}/so_preprocessed.csv") -> "SOFeatureEngineering":
         keep = list(dict.fromkeys(
             self.feature_cols
@@ -269,7 +266,7 @@ class SOFeatureEngineering:
               f"({len(self.df_engineered):,} rows, {len(keep)} columns)")
         return self
 
-    # -- Plots -----------------------------------------------------------------
+    # Plots 
     def plot_feature_distributions(self):
         df  = self.df_engineered
         fig, axes = plt.subplots(2, 3, figsize=(16, 9), facecolor=PALETTE["bg"])
@@ -339,9 +336,7 @@ class SOFeatureEngineering:
         print(f"[SO FE] Saved -> {out}")
 
 
-# =============================================================================
 # SECTION 2 -- GITHUB OSS SURVEY 2017
-# =============================================================================
 
 class GHFeatureEngineering:
 
@@ -442,16 +437,15 @@ class GHFeatureEngineering:
         return self
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
+
 
 if __name__ == "__main__":
     print("\n" + "=" * 65)
     print("  NOTEBOOK 2 -- FEATURE ENGINEERING & PREPROCESSING")
     print("=" * 65)
 
-    # -- Stack Overflow --------------------------------------------------------
+    #  Stack Overflow 
     so_fe = SOFeatureEngineering().load().engineer()
 
     # Save FIRST before any plots
@@ -466,7 +460,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"[SO FE] Warning: {label} failed -- {e}")
 
-    # -- GitHub OSS ------------------------------------------------------------
+    #  GitHub OSS 
     gh_fe = GHFeatureEngineering().load().engineer()
     gh_fe.save()
 

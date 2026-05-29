@@ -1,7 +1,7 @@
 """
-=============================================================================
+
   NOTEBOOK 5 -- MITIGATION & COMPLIANCE REPORTING
-=============================================================================
+
   Inputs  : data/preprocessed/so_preprocessed.csv
             data/preprocessed/gh_preprocessed.csv
             outputs/models/so_xgboost.pkl
@@ -13,7 +13,6 @@
             outputs/gh_mitigation_results.csv
 
   Mitigation strategies
-  ----------------------
   A. Reweighing (Kamiran & Calders 2012)
      Per-sample weights inversely proportional to group x label frequency.
      Retrain XGBoost with these weights.
@@ -23,11 +22,10 @@
      prediction rate to the global rate. No retraining needed.
 
   Note on train/test split
-  ------------------------
   NB5 re-splits from scratch with the same random_state=42 used in NB3.
   This gives the same test partition, so baseline AUC/DPD match NB3 exactly.
   The reweighed model is retrained fresh here (not saved in NB3).
-=============================================================================
+
 """
 
 import os
@@ -73,10 +71,7 @@ SENSITIVE_DEFS = {
 }
 DPD_THRESHOLD = 0.05
 
-
-# =============================================================================
 # SHARED MITIGATION HELPERS
-# =============================================================================
 
 def reweigh_samples(y: pd.Series, g: pd.Series) -> np.ndarray:
     """Kamiran & Calders (2012): weight = P(Y)*P(G) / P(Y,G)"""
@@ -142,9 +137,8 @@ def _load_xgb(prefix: str):
 #Tries two filename patterns, so_xgboost.pkl first, then the legacy so_xgb.pkl 
 #and raises an error if neither is found. This is for backward compatibility with older runs of NB3.
 
-# =============================================================================
+
 # SECTION 1 -- STACK OVERFLOW 2024
-# =============================================================================
 
 class SOMitigation:
 
@@ -243,9 +237,7 @@ class SOMitigation:
         
         """
 
-# =============================================================================
 # SECTION 2 -- GITHUB OSS SURVEY 2017
-# =============================================================================
 
 class GHMitigation:
 
@@ -280,7 +272,7 @@ class GHMitigation:
             y_te, y_base, sensitive_features=g_bin_te
         )))
 
-        # A: Reweighing
+        # Reweighing
         sw = reweigh_samples(y_tr, g_tr)
         xgb_rw = XGBClassifier(
             n_estimators=200, max_depth=3, learning_rate=0.05,
@@ -294,7 +286,7 @@ class GHMitigation:
             y_te, y_rw, sensitive_features=g_bin_te
         )))
 
-        # B: Threshold calibration
+        # Threshold calibration
         y_to   = threshold_calibrate(base_model, X_te, g_te)
         auc_to = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
         dpd_to = abs(float(demographic_parity_difference(
@@ -325,9 +317,7 @@ class GHMitigation:
 #same as for previous 
 
 
-# =============================================================================
 # PLOTS
-# =============================================================================
 
 def plot_mitigation_tradeoff(so_tradeoffs: dict, gh_tradeoff: dict):
     markers = {"baseline": "X", "reweigh": "s", "threshold": "o"}
@@ -447,9 +437,7 @@ def plot_eu_compliance_table(so_tradeoffs: dict, gh_tradeoff: dict):
     print(f"  Saved -> {out}")
 
 
-# =============================================================================
 # MAIN
-# =============================================================================
 
 if __name__ == "__main__":
     print("\n" + "=" * 65)
