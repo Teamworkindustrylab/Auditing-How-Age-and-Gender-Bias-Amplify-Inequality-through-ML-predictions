@@ -1,1 +1,7 @@
 data/*.csv
+#outputs/*.csv
+#data/preprocessed/*.csv
+#outputs/models/*.pkl
+#data/raw_eda/*.csv
+#__pycache__/
+#*.pyc

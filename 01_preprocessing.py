@@ -57,6 +57,7 @@ warnings.filterwarnings("ignore")
 np.random.seed(42)
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
+
 SO_PATH  = "data/survey_results_public.csv"
 GH_URL   = ("https://raw.githubusercontent.com/github/"
              "open-source-survey/master/data/survey_data.csv")
@@ -70,23 +71,24 @@ PALETTE = {
     "bg":  "#fafafa",
 }
 
-# =============================================================================
-# SECTION 1 — STACK OVERFLOW 2024
-# =============================================================================
 
-# ── 1.1  Parse raw CSV ────────────────────────────────────────────────────────
+# SECTION 1 — STACK OVERFLOW 2024
+
+# ── 1.1  Parsing raw CSV ────────────────────────────────────────────────────────
+
 #  The SO CSV wraps every data row in an outer quote. Some rows contain
 #  unescaped inner quotes that break standard parsers, so we read it with
 #  csv.reader and extract the columns we need by positional index.
 #
 #  Columns used in this project:
-#    row[0] → inner CSV → Age[2], Employment[3], RemoteWork[4],
+#    row[0] -> inner CSV -> Age[2], Employment[3], RemoteWork[4],
 #                         EdLevel[7], YearsCode[?], YearsCodePro[?], DevType[?]
-#    row[-2] → ConvertedCompYearly
+#    row[-2] -> ConvertedCompYearly
 
 def _parse_so(path: str) -> pd.DataFrame:
     """
     Parse SO survey CSV and return a DataFrame with the columns we care about.
+    
     Because the inner-row quoting is inconsistent, we first read the header
     to detect column positions, then extract values positionally.
     """
@@ -119,9 +121,9 @@ def _parse_so(path: str) -> pd.DataFrame:
         "DevType":             _find("DevType"),
         "ConvertedCompYearly": _find("ConvertedCompYearly"),
     }
-    print(f"[SO]   Column positions detected: {idx}")
+    print(f"[SO] Column positions detected: {idx}")
 
-    # Step 2: parse each data row
+    # parsing each data row
     records = []
     with open(path, "r", encoding="latin-1", errors="replace") as f:
         reader = csv.reader(f)
@@ -130,7 +132,7 @@ def _parse_so(path: str) -> pd.DataFrame:
         for row in reader:
             if not row:
                 continue
-            # row[0] is the outer-quoted chunk; parse it as inner CSV
+            # row[0] is the outer-quoted chunk
             try:
                 inner = list(csv.reader([row[0]]))[0] if row[0] else []
             except Exception:
@@ -527,10 +529,10 @@ if __name__ == "__main__":
 
     os.makedirs("data", exist_ok=True)
 
-    # ── Stack Overflow ─────────────────────────────────────────────────────────
+    #  Stack Overflow
     so_raw = load_so(SO_PATH)
 
-    # Save immediately — before any plots that could raise
+    # Save immediately
     so_raw.to_csv("data/so_raw.csv", index=False)
     print(f"\n  [SO] Raw data saved → data/so_raw.csv  "
           f"({len(so_raw):,} rows, {len(so_raw.columns)} columns)")
@@ -547,7 +549,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  [SO] Warning: {label} failed — {e}")
 
-    # ── GitHub OSS ─────────────────────────────────────────────────────────────
+    #  GitHub OSS 
     gh_raw = load_gh()
 
     # Save immediately
@@ -563,5 +565,5 @@ if __name__ == "__main__":
         print(f"  [GH] Warning: gender/paid plot failed — {e}")
 
     print("\n  NOTEBOOK 1 COMPLETE")
-    print("  → data/so_raw.csv")
-    print("  → data/gh_raw.csv")
+    print("   data/so_raw.csv")
+    print("   data/gh_raw.csv")

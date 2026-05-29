@@ -89,6 +89,9 @@ def reweigh_samples(y: pd.Series, g: pd.Series) -> np.ndarray:
         ) / (n * len(grp))
     return df_w.apply(lambda r: lut.get((r.g, r.y), 1.0), axis=1).values
 
+#Kamiran & Calders (2012)
+#groups that are underrepresented in the training data relative to their
+#label frequency get higher sample weights, so the model pays more attention to them during training.
 
 def threshold_calibrate(model, X_te: pd.DataFrame,
                         g_te: pd.Series) -> np.ndarray:
@@ -114,6 +117,8 @@ def threshold_calibrate(model, X_te: pd.DataFrame,
         y_pred[mask] = (probs >= (lo + hi) / 2).astype(int)
     return y_pred
 
+#After the model produces probability scores, 
+#it finds a different decision threshold for each sensitive group via binary search.
 
 def _max_gap(y_pred, g_series) -> float:
     """Max - min positive-prediction rate across all groups."""
@@ -121,6 +126,7 @@ def _max_gap(y_pred, g_series) -> float:
     rates  = [y_pred[g_series == grp].mean() for grp in groups]
     return float(max(rates) - min(rates))
 
+#max minus min positive-prediction rate
 
 def _load_xgb(prefix: str):
     for name in [f"{prefix}_xgboost.pkl", f"{prefix}_xgb.pkl"]:
@@ -133,6 +139,8 @@ def _load_xgb(prefix: str):
         f"Run Notebook 3 first."
     )
 
+#Tries two filename patterns, so_xgboost.pkl first, then the legacy so_xgb.pkl 
+#and raises an error if neither is found. This is for backward compatibility with older runs of NB3.
 
 # =============================================================================
 # SECTION 1 -- STACK OVERFLOW 2024
@@ -223,6 +231,18 @@ class SOMitigation:
         return tradeoffs
 
 
+        """
+        Baseline — just loads the NB3 model and measures its DPD on the test set with no changes.
+        Reweighing — computes sample weights for the training set, trains a fresh XGBoost with those weights, measures DPD on the same test set. 
+        The model architecture is identical to NB3,only the sample weights differ.
+        Threshold calibration — takes the baseline NB3 model, applies threshold_calibrate() to get per-group thresholds,
+        measures DPD on the resulting predictions.
+        
+        + AUC and DPD are reported as the tuple.
+        
+        
+        """
+
 # =============================================================================
 # SECTION 2 -- GITHUB OSS SURVEY 2017
 # =============================================================================
@@ -301,6 +321,8 @@ class GHMitigation:
                                   index=False)
         print(f"\n  Saved -> {OUT}/gh_mitigation_results.csv")
         return self.tradeoff
+
+#same as for previous 
 
 
 # =============================================================================
