@@ -3,21 +3,24 @@
   NOTEBOOK 3 -- BIAS BASELINE & AMPLIFICATION MEASUREMENT
 
   Inputs  : data/preprocessed/so_preprocessed.csv
-            data/preprocessed/gh_preprocessed.csv
+            data/preprocessed/fcc_preprocessed.csv
 
   Outputs : outputs/so_bias_results.csv
-            outputs/gh_bias_results.csv
+            outputs/fcc_bias_results.csv
             outputs/models/so_logistic_regression.pkl
             outputs/models/so_xgboost.pkl
-            outputs/models/gh_logistic_regression.pkl
-            outputs/models/gh_xgboost.pkl
+            outputs/models/fcc_logistic_regression.pkl
+            outputs/models/fcc_xgboost.pkl
             outputs/nb3_amplification_chart.png
 
-  Sensitive definitions evaluated (SO)
-  --------------------------------------
-  S1  age_group       -- binary  young / experienced
-  S2  age_exp_pro     -- 6-way   age x YearsCodePro bracket
-  S3  age_exp_total   -- 6-way   age x YearsCode bracket
+  Sensitive definitions evaluated
+  -------------------------------
+  SO:
+    S1  age_group       -- binary  young / experienced
+    S2  age_exp_pro     -- 6-way   age x YearsCodePro bracket
+    S3  age_exp_total   -- 6-way   age x YearsCode bracket
+  FCC:
+    gender_clean        -- binary  man / woman
 
   Amplification ratio = model_max_gap / data_max_gap
   >1.0 means the model widens the gap that already existed in the data.
@@ -48,25 +51,33 @@ warnings.filterwarnings("ignore")
 np.random.seed(42)
 
 IN_SO   = "data/preprocessed/so_preprocessed.csv"
-IN_GH   = "data/preprocessed/gh_preprocessed.csv"
+IN_FCC  = "data/preprocessed/fcc_preprocessed.csv"
 OUT     = "outputs"
 MDL_DIR = "outputs/models"
 os.makedirs(OUT,     exist_ok=True)
 os.makedirs(MDL_DIR, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "gh": "#24292e",
+PALETTE = {"so": "#f48024", "fcc": "#0a0a23",
            "ok": "#27ae60", "bad": "#e74c3c", "bg": "#fafafa"}
 
 SO_BASE_FEATURES = [
     "ed_level_enc", "is_employed", "is_remote", "is_student",
     "years_code", "years_code_pro",
 ]
-GH_FEATURE_COLS = [
-    "pro_experience_yrs", "oss_experience_yrs",
-    "find_answers_score", "receive_help_score",
-    "contributor_help_score", "find_maintainer_score",
-    "had_negative_exp", "had_harassment", "is_high_income_country",
+
+# NEW FCC feature set (replaces previous GH_FEATURE_COLS)
+FCC_FEATURE_COLS = [
+    "months_programming",
+    "hours_learning_per_week",
+    "num_learning_resources",
+    "attended_bootcamp",
+    "is_under_employed",
+    "is_ethnic_minority",
+    "has_degree",
+    "is_high_income_country",
+    "log_expected_earning",
 ]
+
 SENSITIVE_DEFS = {
     "S1_age_group":     "age_group",
     "S2_age_exp_pro":   "age_exp_pro",
@@ -74,9 +85,7 @@ SENSITIVE_DEFS = {
 }
 
 
-# =============================================================================
 # SHARED HELPERS
-# =============================================================================
 
 def _make_models() -> dict:
     return {
@@ -93,7 +102,6 @@ def _make_models() -> dict:
 
 
 def _slug(name: str) -> str:
-    """'Logistic Regression' -> 'logistic_regression'"""
     return name.lower().replace(" ", "_")
 
 
@@ -111,11 +119,6 @@ def train_and_eval(X_tr, X_te, y_tr, y_te) -> dict:
 
 
 def measure_bias_multigroup(y_true, y_pred, g_series) -> dict:
-    """
-    Bias metrics for both binary and multi-class sensitive attributes.
-    For binary groups uses fairlearn DPD/EOD.
-    For 3+ groups reports max-min gap (fairlearn DPD undefined for >2 groups).
-    """
     groups      = np.unique(g_series)
     group_rates = {grp: y_pred[g_series == grp].mean() for grp in groups}
     rates       = np.array(list(group_rates.values()))
@@ -135,9 +138,7 @@ def measure_bias_multigroup(y_true, y_pred, g_series) -> dict:
     return dict(group_rates=group_rates, max_gap=max_gap, dpd=dpd, eod=eod)
 
 
-# =============================================================================
-# SECTION 1 -- STACK OVERFLOW 2024
-# =============================================================================
+# SECTION 1 -- STACK OVERFLOW 2024 (UNCHANGED)
 
 class SOBiasAmplification:
 
@@ -147,7 +148,7 @@ class SOBiasAmplification:
                 f"[SO] {path} not found -- run Notebook 2 first."
             )
         df = pd.read_csv(path)
-        devtype_cols      = [c for c in df.columns if c.startswith("devtype_")]
+        devtype_cols = [c for c in df.columns if c.startswith("devtype_")]
         self.feature_cols = [c for c in SO_BASE_FEATURES + devtype_cols
                              if c in df.columns]
         self.df = df
@@ -163,7 +164,6 @@ class SOBiasAmplification:
         baselines = {}
         for key, col in SENSITIVE_DEFS.items():
             if col not in df.columns:
-                print(f"  [skip] {col} not in DataFrame")
                 continue
             rates = (
                 df.groupby(col)["above_median_salary"]
@@ -181,25 +181,19 @@ class SOBiasAmplification:
     def train(self) -> "SOBiasAmplification":
         X = self.df[self.feature_cols]
         y = self.df["above_median_salary"]
-
-        # Split and keep a copy of the original DataFrame index so we can
-        # retrieve sensitive-attribute values for the test set later.
         idx = self.df.index.to_series()
         X_tr, X_te, y_tr, y_te, idx_tr, idx_te = train_test_split(
             X, y, idx, test_size=0.25, stratify=y, random_state=42
         )
-
         print("\n" + "=" * 60)
         print("SO -- STAGE 2: MODEL TRAINING")
         print("=" * 60)
         print(f"  Train: {len(X_tr):,}  Test: {len(X_te):,}")
 
         self.fitted  = train_and_eval(X_tr, X_te, y_tr, y_te)
-        self.X_tr    = X_tr
-        self.X_te    = X_te
-        self.y_tr    = y_tr
-        self.y_te    = y_te
-        self.idx_te  = idx_te   # original DataFrame index values for test rows
+        self.X_tr, self.X_te = X_tr, X_te
+        self.y_tr, self.y_te = y_tr, y_te
+        self.idx_te = idx_te
 
         for name, res in self.fitted.items():
             p = f"{MDL_DIR}/so_{_slug(name)}.pkl"
@@ -217,15 +211,12 @@ class SOBiasAmplification:
         for key, base in self.baselines.items():
             col   = base["col"]
             gap_d = base["gap"]
-
-            # Retrieve sensitive attribute values for test rows using
-            # original index -- this is safe regardless of reset_index calls.
-            g_te = self.df.loc[self.idx_te.values, col].values
+            g_te  = self.df.loc[self.idx_te, col]
             amp_results[key] = {}
 
             for mname, res in self.fitted.items():
                 bm  = measure_bias_multigroup(
-                    self.y_te.values, res["y_pred"], g_te
+                    self.y_te.values, res["y_pred"], g_te.values
                 )
                 amp = bm["max_gap"] / (gap_d + 1e-9)
                 amp_results[key][mname] = {
@@ -242,12 +233,8 @@ class SOBiasAmplification:
                 print(f"    Amplification   : {amp:.2f}x")
                 print(f"    DPD             : {bm['dpd']:+.4f}")
                 print(f"    EOD             : {eod_str}")
-                print(f"    Per-group rates :")
-                for grp, rate in bm["group_rates"].items():
-                    print(f"      {str(grp):40s}  {rate:.3f}")
 
         self.amp_results = amp_results
-
         rows = []
         for key, models in amp_results.items():
             for mname, v in models.items():
@@ -265,25 +252,23 @@ class SOBiasAmplification:
         return amp_results
 
 
+# SECTION 2 -- freeCodeCamp 2018 (REPLACES GH OSS 2017)
 
-# SECTION 2 -- GITHUB OSS SURVEY 2017
+class FCCBiasAmplification:
 
-
-class GHBiasAmplification:
-
-    def load(self, path: str = IN_GH) -> "GHBiasAmplification":
+    def load(self, path: str = IN_FCC) -> "FCCBiasAmplification":
         if not os.path.exists(path):
             raise FileNotFoundError(
-                f"[GH] {path} not found -- run Notebook 2 first."
+                f"[FCC] {path} not found -- run Notebook 2 first."
             )
         self.df = pd.read_csv(path)
-        print(f"\n[GH] Loaded {len(self.df):,} rows from {path}")
+        print(f"\n[FCC] Loaded {len(self.df):,} rows from {path}")
         return self
 
     def data_baseline(self) -> float:
         df = self.df
         print("\n" + "=" * 60)
-        print("GH OSS -- STAGE 1: DATA BIAS BASELINE")
+        print("FCC -- STAGE 1: DATA BIAS BASELINE")
         print("=" * 60)
         stats = (
             df.groupby("gender_clean")["paid_contributor"]
@@ -291,15 +276,15 @@ class GHBiasAmplification:
               .rename(columns={"mean": "paid_rate", "count": "n"})
         )
         print(stats.to_string())
-        m   = stats.loc["man",   "paid_rate"] if "man"   in stats.index else np.nan
-        f   = stats.loc["woman", "paid_rate"] if "woman" in stats.index else np.nan
-        gap = float(m - f)
+        m = stats.loc["man",   "paid_rate"] if "man"   in stats.index else np.nan
+        w = stats.loc["woman", "paid_rate"] if "woman" in stats.index else np.nan
+        gap = float(m - w)
         print(f"\n  Gap (man - woman): {gap:.4f}")
         self.gap_data = gap
         return gap
 
-    def train(self) -> "GHBiasAmplification":
-        feats = [c for c in GH_FEATURE_COLS if c in self.df.columns]
+    def train(self) -> "FCCBiasAmplification":
+        feats = [c for c in FCC_FEATURE_COLS if c in self.df.columns]
         X = self.df[feats]
         y = self.df["paid_contributor"]
         g = self.df["gender_clean"]
@@ -308,20 +293,19 @@ class GHBiasAmplification:
             X, y, g, test_size=0.25, stratify=y, random_state=42
         )
         print("\n" + "=" * 60)
-        print("GH OSS -- STAGE 2: MODEL TRAINING")
+        print("FCC -- STAGE 2: MODEL TRAINING")
         print("=" * 60)
+        print(f"  Features used: {feats}")
+        print(f"  Train: {len(X_tr):,}  Test: {len(X_te):,}")
 
-        self.fitted  = train_and_eval(X_tr, X_te, y_tr, y_te)
-        self.X_tr    = X_tr
-        self.X_te    = X_te
-        self.y_tr    = y_tr
-        self.y_te    = y_te
-        self.g_tr    = g_tr
-        self.g_te    = g_te
-        self.gh_feats = feats
+        self.fitted = train_and_eval(X_tr, X_te, y_tr, y_te)
+        self.X_tr, self.X_te = X_tr, X_te
+        self.y_tr, self.y_te = y_tr, y_te
+        self.g_tr, self.g_te = g_tr, g_te
+        self.fcc_feats = feats
 
         for name, res in self.fitted.items():
-            p = f"{MDL_DIR}/gh_{_slug(name)}.pkl"
+            p = f"{MDL_DIR}/fcc_{_slug(name)}.pkl"
             with open(p, "wb") as f:
                 pickle.dump(res["model"], f)
             print(f"  Model saved -> {p}")
@@ -330,7 +314,7 @@ class GHBiasAmplification:
     def measure_amplification(self) -> dict:
         results = {}
         print("\n" + "=" * 60)
-        print("GH OSS -- STAGE 3: BIAS AMPLIFICATION")
+        print("FCC -- STAGE 3: BIAS AMPLIFICATION")
         print("=" * 60)
         g_bin = (self.g_te == "woman").astype(int).values
         for name, res in self.fitted.items():
@@ -350,17 +334,15 @@ class GHBiasAmplification:
                  "dpd": v["dpd"], "eod": v["eod"],
                  "amplification": v["amplification"], "auc": v["auc"]}
                 for k, v in results.items()]
-        pd.DataFrame(rows).to_csv(f"{OUT}/gh_bias_results.csv", index=False)
-        print(f"\n  Saved -> {OUT}/gh_bias_results.csv")
+        pd.DataFrame(rows).to_csv(f"{OUT}/fcc_bias_results.csv", index=False)
+        print(f"\n  Saved -> {OUT}/fcc_bias_results.csv")
         return results
-
 
 
 # COMPARISON CHART
 
-
 def plot_amplification_comparison(so: SOBiasAmplification,
-                                  gh: GHBiasAmplification):
+                                  fcc: FCCBiasAmplification):
     fig, axes = plt.subplots(1, 2, figsize=(16, 7), facecolor=PALETTE["bg"])
     fig.suptitle(
         "Bias Amplification Ratio by Model & Sensitive-Attribute Definition\n"
@@ -368,18 +350,17 @@ def plot_amplification_comparison(so: SOBiasAmplification,
         fontweight="bold"
     )
 
-    # SO panel
-    ax   = axes[0]
+    ax = axes[0]
     ax.set_facecolor("#fff8f0")
     skeys = list(so.amp_results.keys())
     mnames = list(so.fitted.keys())
-    x, w  = np.arange(len(skeys)), 0.35
+    x, w = np.arange(len(skeys)), 0.35
     for i, mname in enumerate(mnames):
-        amps   = [so.amp_results[sk][mname]["amplification"] for sk in skeys]
+        amps = [so.amp_results[sk][mname]["amplification"] for sk in skeys]
         offset = (i - 0.5) * w
-        bars   = ax.bar(x + offset, amps, w,
-                        label=mname,
-                        color=[PALETTE["so"], "#1a5276"][i], alpha=0.85)
+        bars = ax.bar(x + offset, amps, w,
+                      label=mname,
+                      color=[PALETTE["so"], "#1a5276"][i], alpha=0.85)
         for bar, val in zip(bars, amps):
             ax.text(bar.get_x() + bar.get_width() / 2,
                     bar.get_height() + 0.02,
@@ -392,12 +373,11 @@ def plot_amplification_comparison(so: SOBiasAmplification,
     ax.set_title("SO 2024 -- Age / Age x Experience", fontweight="bold")
     ax.legend(fontsize=8)
 
-    # GH panel
-    ax2  = axes[1]
+    ax2 = axes[1]
     ax2.set_facecolor("#f0f4ff")
-    gkeys  = list(gh.bias_results.keys())
-    colors = [PALETTE["gh"], "#2c7a2c"]
-    for i, (mname, v) in enumerate(gh.bias_results.items()):
+    gkeys = list(fcc.bias_results.keys())
+    colors = [PALETTE["fcc"], "#2c7a2c"]
+    for i, (mname, v) in enumerate(fcc.bias_results.items()):
         ax2.bar(i, v["amplification"], 0.5,
                 label=mname, color=colors[i % len(colors)], alpha=0.85)
         ax2.text(i, v["amplification"] + 0.02,
@@ -407,7 +387,7 @@ def plot_amplification_comparison(so: SOBiasAmplification,
     ax2.set_xticks(range(len(gkeys)))
     ax2.set_xticklabels([k.replace(" ", "\n") for k in gkeys], fontsize=9)
     ax2.set_ylabel("Amplification ratio")
-    ax2.set_title("GH OSS 2017 -- Gender", fontweight="bold")
+    ax2.set_title("FCC 2018 -- Gender", fontweight="bold")
     ax2.legend(fontsize=8)
 
     plt.tight_layout()
@@ -417,7 +397,6 @@ def plot_amplification_comparison(so: SOBiasAmplification,
     print(f"\n  Saved -> {out}")
 
 
-
 # MAIN
 
 if __name__ == "__main__":
@@ -425,19 +404,24 @@ if __name__ == "__main__":
     print("  NOTEBOOK 3 -- BIAS BASELINE & AMPLIFICATION MEASUREMENT")
     print("=" * 65)
 
-    so = SOBiasAmplification().load()
-    so.data_baseline()
-    so.train()
-    so.measure_amplification()
+    if os.path.exists(IN_SO):
+        so = SOBiasAmplification().load()
+        so.data_baseline()
+        so.train()
+        so.measure_amplification()
+    else:
+        print(f"[SO] {IN_SO} missing -- skipping SO section.")
+        so = None
 
-    gh = GHBiasAmplification().load()
-    gh.data_baseline()
-    gh.train()
-    gh.measure_amplification()
+    fcc = FCCBiasAmplification().load()
+    fcc.data_baseline()
+    fcc.train()
+    fcc.measure_amplification()
 
-    try:
-        plot_amplification_comparison(so, gh)
-    except Exception as e:
-        print(f"  Warning: comparison chart failed -- {e}")
+    if so is not None:
+        try:
+            plot_amplification_comparison(so, fcc)
+        except Exception as e:
+            print(f"  Warning: comparison chart failed -- {e}")
 
     print("\n  NOTEBOOK 3 COMPLETE")

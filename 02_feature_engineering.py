@@ -3,23 +3,30 @@
   NOTEBOOK 2 -- FEATURE ENGINEERING & PREPROCESSING
 
   Inputs  : data/so_raw.csv   (from Notebook 1)
-            data/gh_raw.csv   (from Notebook 1)
+            data/fcc_raw.csv  (from Notebook 1)
 
   Outputs : data/preprocessed/so_preprocessed.csv
-            data/preprocessed/gh_preprocessed.csv
+            data/preprocessed/fcc_preprocessed.csv
             data/raw_eda/so_feature_distributions.png
             data/raw_eda/so_sensitive_group_rates.png
+            data/raw_eda/fcc_feature_distributions.png
 
-  Sensitive-attribute definitions (SO)
-  -------------------------------------
-  S1  age_group       -- binary: young (<35) vs experienced (35+)
-  S2  age_exp_pro     -- age x YearsCodePro bracket (junior/mid/senior)
-  S3  age_exp_total   -- age x YearsCode bracket    (junior/mid/senior)
-  All three saved; NB3 evaluates them in parallel.
+  Sensitive-attribute definitions
+  --------------------------------
+  SO:
+    S1  age_group       -- binary: young (<35) vs experienced (35+)
+    S2  age_exp_pro     -- age x YearsCodePro bracket (junior/mid/senior)
+    S3  age_exp_total   -- age x YearsCode bracket    (junior/mid/senior)
 
-  YearsCode / YearsCodePro : ordinal string -> float midpoint
-  DevType                  : multi-select semicolon -> top-N binary flags
-  Target                   : above_median_salary (binary)
+  FCC:
+    gender_clean        -- binary: man vs woman   (primary)
+    age_group           -- binary: young (<35) vs experienced (35+)   (kept
+                           for optional intersectional extension in NB6)
+
+  Targets
+  -------
+  SO  : above_median_salary (binary)
+  FCC : paid_contributor    (binary, = 'Are you already working as a software developer?')
 
 """
 
@@ -29,20 +36,20 @@ import warnings
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")   # non-interactive backend -- no display needed
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
-IN_SO = "data/so_raw.csv"
-IN_GH = "data/gh_raw.csv"
-OUT   = "data/preprocessed"
-PLOTS = "data/raw_eda"
+IN_SO  = "data/so_raw.csv"
+IN_FCC = "data/fcc_raw.csv"
+OUT    = "data/preprocessed"
+PLOTS  = "data/raw_eda"
 os.makedirs(OUT,   exist_ok=True)
 os.makedirs(PLOTS, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "gh": "#24292e", "bg": "#fafafa"}
+PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "bg": "#fafafa"}
 
 TOP_DEVTYPES = [
     "Developer, full-stack",
@@ -58,27 +65,33 @@ TOP_DEVTYPES = [
 ]
 
 
-
 # SHARED UTILITY
 
 def _classify_age(age_val) -> str:
     """
-    Fuzzy age classifier -- extracts the upper bound of the age band
-    and thresholds at 35. Handles all SO survey export formats:
-      '18-24 years old', '25-34 years old', 'Under 18 years old', etc.
+    Fuzzy age classifier -- handles both SO ordinal age bands and
+    FCC numeric ages. Thresholds at 35 -> 'young' vs 'experienced'.
     """
     s = str(age_val).strip().lower()
     if not s or s in ("nan", "na", ""):
         return "experienced"
     if "under 18" in s or "< 18" in s:
         return "young"
+    # Try numeric (FCC has numeric ages e.g. "27")
+    try:
+        n = float(s)
+        # Filter out obvious data-entry errors (e.g. age=250)
+        if 5 <= n <= 100:
+            return "young" if n < 35 else "experienced"
+    except ValueError:
+        pass
     nums = [int(x) for x in re.findall(r"\d+", s)]
     if not nums:
         return "experienced"
     return "young" if max(nums) <= 34 else "experienced"
 
 
-# SECTION 1 -- STACK OVERFLOW 2024
+# SECTION 1 -- STACK OVERFLOW 2024  (UNCHANGED)
 
 class SOFeatureEngineering:
 
@@ -108,10 +121,8 @@ class SOFeatureEngineering:
             )
         self.df = pd.read_csv(path)
         print(f"[SO FE] Loaded {len(self.df):,} rows from {path}")
-        print(f"[SO FE] Columns: {list(self.df.columns)}")
         return self
 
-    # Target
     def _build_target(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
         df["ConvertedCompYearly"] = pd.to_numeric(
@@ -123,7 +134,7 @@ class SOFeatureEngineering:
         df = df[df["ConvertedCompYearly"].notna() &
                 (df["ConvertedCompYearly"] > 0)].copy()
         print(f"[SO FE] Rows with valid salary: {len(df):,} "
-              f"(dropped {n_before - len(df):,} with missing/zero salary)")
+              f"(dropped {n_before - len(df):,})")
 
         lo = df["ConvertedCompYearly"].quantile(0.01)
         hi = df["ConvertedCompYearly"].quantile(0.99)
@@ -139,56 +150,26 @@ class SOFeatureEngineering:
               f"median salary ${median_sal:,.0f}")
         return df
 
-    #  Sensitive attributes 
     def _build_sensitive(self, df: pd.DataFrame) -> pd.DataFrame:
-        # S1 -- age only
         df["age_group"] = df["Age"].apply(_classify_age)
-
-        # classification result
-        vc = df["age_group"].value_counts()
-        print(f"\n[SO FE] age_group distribution:")
-        for k, n in vc.items():
-            print(f"    {k:20s}  n={n:6,}  ({n/len(df)*100:.1f}%)")
-
-        # YearsCodePro -> float
         ycp = df["YearsCodePro"].map(self.YEARS_MAP)
         ycp = ycp.fillna(pd.to_numeric(df["YearsCodePro"], errors="coerce"))
-        median_ycp = ycp.median()
-        df["years_code_pro"] = ycp.fillna(median_ycp)
-
-        # YearsCode -> float
+        df["years_code_pro"] = ycp.fillna(ycp.median())
         yc = df["YearsCode"].map(self.YEARS_MAP)
         yc = yc.fillna(pd.to_numeric(df["YearsCode"], errors="coerce"))
-        median_yc = yc.median()
-        df["years_code"] = yc.fillna(median_yc)
-
-        print(f"[SO FE] years_code_pro: median={median_ycp:.1f}, "
-              f"nulls filled: {ycp.isna().sum()}")
-        print(f"[SO FE] years_code:     median={median_yc:.1f}, "
-              f"nulls filled: {yc.isna().sum()}")
+        df["years_code"] = yc.fillna(yc.median())
 
         def _bracket(yrs):
             if pd.isna(yrs): return "unknown"
             if yrs < 5:      return "junior"
             if yrs < 15:     return "mid"
             return "senior"
-
         df["exp_pro_bracket"]   = df["years_code_pro"].apply(_bracket)
         df["exp_total_bracket"] = df["years_code"].apply(_bracket)
-
-        # S2 and S3
         df["age_exp_pro"]   = df["age_group"] + "_" + df["exp_pro_bracket"]
         df["age_exp_total"] = df["age_group"] + "_" + df["exp_total_bracket"]
-
-        for col in ["age_exp_pro", "age_exp_total"]:
-            vc = df[col].value_counts()
-            print(f"\n[SO FE] {col}:")
-            for k, n in vc.items():
-                print(f"    {k:35s}  n={n:6,}  ({n/len(df)*100:.1f}%)")
-
         return df
 
-    # Education 
     def _encode_education(self, df: pd.DataFrame) -> pd.DataFrame:
         def _ed(v):
             v = str(v).lower()
@@ -197,11 +178,9 @@ class SOFeatureEngineering:
                     return score
             return np.nan
         df["ed_level_enc"] = df["EdLevel"].apply(_ed)
-        median_ed = df["ed_level_enc"].median()
-        df["ed_level_enc"] = df["ed_level_enc"].fillna(median_ed)
+        df["ed_level_enc"] = df["ed_level_enc"].fillna(df["ed_level_enc"].median())
         return df
 
-    #  Employment / remote 
     def _encode_employment(self, df: pd.DataFrame) -> pd.DataFrame:
         df["is_employed"] = (
             df["Employment"].fillna("").str.contains(
@@ -216,7 +195,6 @@ class SOFeatureEngineering:
         ).astype(int)
         return df
 
-    #  DevType flags 
     def _encode_devtype(self, df: pd.DataFrame) -> pd.DataFrame:
         df["DevType"] = df["DevType"].fillna("").astype(str)
         slugs = []
@@ -230,10 +208,8 @@ class SOFeatureEngineering:
             ).astype(int)
             slugs.append(slug)
         self.devtype_cols = slugs
-        print(f"[SO FE] DevType flags: {slugs}")
         return df
 
-    #  Orchestrate 
     def engineer(self) -> "SOFeatureEngineering":
         df = self.df.copy()
         df = self._build_target(df)
@@ -251,7 +227,6 @@ class SOFeatureEngineering:
                 "years_code", "years_code_pro"]
         return base + self.devtype_cols
 
-    # Save 
     def save(self, path: str = f"{OUT}/so_preprocessed.csv") -> "SOFeatureEngineering":
         keep = list(dict.fromkeys(
             self.feature_cols
@@ -266,204 +241,290 @@ class SOFeatureEngineering:
               f"({len(self.df_engineered):,} rows, {len(keep)} columns)")
         return self
 
-    # Plots 
+
+# SECTION 2 -- freeCodeCamp 2018 NEW CODER SURVEY (REPLACES GH OSS 2017)
+# ----------------------------------------------------------------------
+# Engineered feature set is intentionally similar in spirit to the
+# previous GH OSS feature set, but uses fields that FCC actually
+# collects:
+#
+#   GH OSS 2017 feature             ->  FCC 2018 analog
+#   ----------------------------------------------------------------
+#   pro_experience_yrs              ->  months_programming / 12
+#   oss_experience_yrs              ->  (dropped -- FCC has no OSS-
+#                                       specific field; replaced with
+#                                       hours_learning_per_week, which
+#                                       captures the same idea of
+#                                       voluntary, unpaid coding effort)
+#   find_answers_score              ->  num_learning_resources (count
+#                                       of distinct online resources
+#                                       the respondent reports using)
+#   receive_help_score              ->  attended_bootcamp (a binary
+#                                       proxy for structured help-seeking)
+#   contributor_help_score          ->  (dropped)
+#   find_maintainer_score           ->  (dropped)
+#   had_negative_exp                ->  is_under_employed
+#   had_harassment                  ->  is_ethnic_minority (proxy for
+#                                       exposure to systemic disadvantage)
+#   is_high_income_country          ->  (same logic, World-Bank-style list)
+#   (new)                           ->  has_degree (bachelor's or higher)
+#   (new)                           ->  log_expected_earning
+#
+# Result: 8 model features, same magnitude as the previous 9.
+
+
+class FCCFeatureEngineering:
+
+    FEATURE_COLS = [
+        "months_programming",
+        "hours_learning_per_week",
+        "num_learning_resources",
+        "attended_bootcamp",
+        "is_under_employed",
+        "is_ethnic_minority",
+        "has_degree",
+        "is_high_income_country",
+        "log_expected_earning",
+    ]
+
+    HIGH_INCOME = {
+        "United States of America", "United States", "Canada",
+        "United Kingdom", "Germany", "France", "Italy", "Spain",
+        "Netherlands", "Sweden", "Norway", "Denmark", "Finland",
+        "Switzerland", "Austria", "Belgium", "Ireland", "Australia",
+        "New Zealand", "Japan", "Singapore", "South Korea", "Israel",
+    }
+
+    # Learning-resource columns: every FCC binary column that names a
+    # specific learning resource. We count them to build the
+    # "num_learning_resources" feature, an analog of the OSS-help-
+    # seeking ordinal in the previous dataset.
+    LEARNING_RESOURCE_COLS = [
+        "freeCodeCamp", "Coursera", "edX", "Khan Academy", "Udacity",
+        "Udemy", "Codecademy", "Treehouse", "Pluralsight",
+        "Lynda.com", "Code Wars", "HackerRank", "Stack Overflow",
+        "MDN", "W3Schools", "egghead.io", "The Odin Project",
+    ]
+
+    def load(self, path: str = IN_FCC) -> "FCCFeatureEngineering":
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"[FCC FE] {path} not found -- run Notebook 1 first."
+            )
+        self.df = pd.read_csv(path, low_memory=False)
+        print(f"\n[FCC FE] Loaded {len(self.df):,} rows from {path}")
+        return self
+
+    def engineer(self) -> "FCCFeatureEngineering":
+        df = self.df.copy()
+
+        # Sensitive attribute: gender
+        def _gender(g):
+            g = str(g).strip()
+            if g in ("Male", "Man"):     return "man"
+            if g in ("Female", "Woman"): return "woman"
+            return "other"
+        df["gender_clean"] = df["What's your gender?"].apply(_gender)
+
+        # Sensitive attribute (bonus): age_group
+        age_num = pd.to_numeric(df["How old are you?"], errors="coerce")
+        age_num = age_num.where((age_num >= 14) & (age_num <= 80))
+        df["age_numeric"] = age_num
+        df["age_group"]   = age_num.apply(
+            lambda v: "experienced" if pd.notna(v) and v >= 35 else "young"
+        )
+
+        # Target: are they already working as a software developer?
+        dev = pd.to_numeric(
+            df["Are you already working as a software developer?"],
+            errors="coerce",
+        )
+        df["paid_contributor"] = dev.fillna(0).astype(int)
+
+        # Feature: months programming (numeric, light winsorization)
+        mp = pd.to_numeric(
+            df["About how many months have you been programming for?"],
+            errors="coerce",
+        )
+        mp = mp.clip(lower=0, upper=mp.quantile(0.99) if mp.notna().any() else 480)
+        df["months_programming"] = mp.fillna(mp.median())
+
+        # Feature: hours learning per week
+        hl = pd.to_numeric(
+            df["About how many hours do you spend learning each week?"],
+            errors="coerce",
+        )
+        hl = hl.clip(lower=0, upper=hl.quantile(0.99) if hl.notna().any() else 100)
+        df["hours_learning_per_week"] = hl.fillna(hl.median())
+
+        # Feature: num distinct learning resources used
+        present_resources = [c for c in self.LEARNING_RESOURCE_COLS
+                             if c in df.columns]
+        if present_resources:
+            df["num_learning_resources"] = (
+                df[present_resources]
+                  .apply(pd.to_numeric, errors="coerce")
+                  .fillna(0)
+                  .sum(axis=1)
+                  .clip(upper=len(present_resources))
+            )
+        else:
+            df["num_learning_resources"] = 0
+        print(f"[FCC FE] Learning-resource columns used: {len(present_resources)}")
+
+        # Binary features
+        def _to_bin(col):
+            return pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+
+        df["attended_bootcamp"]  = _to_bin("Have you attended a full-time coding bootcamp?")
+        df["is_under_employed"]  = _to_bin("Do you consider yourself under-employed?")
+        df["is_ethnic_minority"] = _to_bin("Are you an ethnic minority in your country?")
+
+        # Has bachelor's or higher
+        deg = df["What's the highest degree or level of school you have completed?"].fillna("").str.lower()
+        df["has_degree"] = deg.str.contains(
+            "bachelor|master|doctorate|professional degree|ph", regex=True
+        ).astype(int)
+
+        # High-income country
+        df["is_high_income_country"] = (
+            df["Which country do you currently live in?"].isin(self.HIGH_INCOME)
+        ).astype(int)
+
+        # Log expected earning (USD) -- log1p handles zeros, clip outliers first
+        ee = pd.to_numeric(
+            df["About how much money do you expect to earn per year at your first developer job (in US Dollars)?"],
+            errors="coerce",
+        )
+        ee = ee.clip(lower=0, upper=300_000)
+        ee = ee.fillna(ee.median())
+        df["log_expected_earning"] = np.log1p(ee)
+
+        # Restrict to binary gender for downstream bias analysis
+        df = df[df["gender_clean"].isin(["man", "woman"])].copy()
+
+        self.df_engineered = df
+        print(f"[FCC FE] Final shape after filtering to binary gender: {df.shape}")
+        print(f"[FCC FE] Gender breakdown:  "
+              f"{df['gender_clean'].value_counts().to_dict()}")
+        print(f"[FCC FE] Target rate (working as developer):  "
+              f"{df['paid_contributor'].mean():.3f}")
+        return self
+
+    def save(self, path: str = f"{OUT}/fcc_preprocessed.csv") -> "FCCFeatureEngineering":
+        keep = [c for c in self.FEATURE_COLS
+                + ["paid_contributor", "gender_clean", "age_group", "age_numeric"]
+                if c in self.df_engineered.columns]
+        self.df_engineered[keep].to_csv(path, index=False)
+        print(f"[FCC FE] Saved -> {path}  "
+              f"({len(self.df_engineered):,} rows, {len(keep)} columns)")
+        return self
+
     def plot_feature_distributions(self):
-        df  = self.df_engineered
-        fig, axes = plt.subplots(2, 3, figsize=(16, 9), facecolor=PALETTE["bg"])
-        fig.suptitle("SO 2024 -- Engineered Feature Distributions",
+        df = self.df_engineered
+        fig, axes = plt.subplots(2, 3, figsize=(15, 8), facecolor=PALETTE["bg"])
+        fig.suptitle("FCC 2018 -- Engineered Feature Distributions",
                      fontweight="bold")
 
-        for ax, col in zip(axes[0],
-                           ["ed_level_enc", "years_code", "years_code_pro"]):
-            df[col].dropna().hist(bins=30, ax=ax,
-                                  color=PALETTE["so"], alpha=0.8)
-            ax.set_title(col)
+        numeric_feats = ["months_programming", "hours_learning_per_week",
+                         "num_learning_resources"]
+        for ax, col in zip(axes[0], numeric_feats):
+            df[col].hist(bins=30, ax=ax, color=PALETTE["fcc"], alpha=0.8)
+            ax.set_title(col, fontsize=10)
             ax.set_ylabel("Count")
 
-        for ax, col in zip(axes[1],
-                           ["is_employed", "is_remote", "is_student"]):
+        binary_feats = ["attended_bootcamp", "is_under_employed",
+                        "is_ethnic_minority"]
+        for ax, col in zip(axes[1], binary_feats):
             df[col].value_counts().sort_index().plot.bar(
-                ax=ax, color=PALETTE["so"], alpha=0.8)
-            ax.set_title(col)
+                ax=ax, color=PALETTE["fcc"], alpha=0.8
+            )
+            ax.set_title(col, fontsize=10)
             ax.set_ylabel("Count")
             ax.tick_params(axis="x", labelrotation=0)
 
         plt.tight_layout()
-        out = f"{PLOTS}/so_feature_distributions.png"
+        out = f"{PLOTS}/fcc_feature_distributions.png"
         plt.savefig(out, dpi=150, bbox_inches="tight")
         plt.close()
-        print(f"[SO FE] Saved -> {out}")
+        print(f"[FCC FE] Saved -> {out}")
 
     def plot_sensitive_group_rates(self):
-        df  = self.df_engineered
-        fig = plt.figure(figsize=(18, 6), facecolor=PALETTE["bg"])
-        fig.suptitle(
-            "SO 2024 -- Above-Median Salary Rate by Sensitive Group Definition",
-            fontweight="bold"
+        """Working-as-developer rate by gender, and by age x gender."""
+        df = self.df_engineered
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5), facecolor=PALETTE["bg"])
+        fig.suptitle("FCC 2018 -- Working-as-Developer Rate by Sensitive Group",
+                     fontweight="bold")
+
+        # By gender
+        rates = (
+            df.groupby("gender_clean")["paid_contributor"]
+              .agg(["mean", "count"])
+              .rename(columns={"mean": "rate", "count": "n"})
         )
-        sens_cols = [
-            ("age_group",     "S1: Age group only"),
-            ("age_exp_pro",   "S2: Age x YearsCodePro"),
-            ("age_exp_total", "S3: Age x YearsCode (total)"),
-        ]
-        for i, (col, title) in enumerate(sens_cols):
-            ax = fig.add_subplot(1, 3, i + 1)
-            rates = (
-                df.groupby(col)["above_median_salary"]
-                  .agg(["mean", "count"])
-                  .rename(columns={"mean": "rate", "count": "n"})
-                  .sort_values("rate", ascending=False)
-            )
-            colors = [PALETTE["so"] if "young" in str(idx) else "#1a5276"
-                      for idx in rates.index]
-            rates["rate"].plot.bar(ax=ax, color=colors, alpha=0.85)
-            ax.set_title(title, fontsize=9, fontweight="bold")
-            ax.set_ylabel("Above-median salary rate")
-            ax.set_ylim(0, 1.0)
-            ax.tick_params(axis="x", labelrotation=35, labelsize=8)
-            for j, v in enumerate(rates["rate"]):
-                ax.text(j, v + 0.01, f"{v:.1%}", ha="center", fontsize=8)
-            gap = rates["rate"].max() - rates["rate"].min()
-            ax.text(0.98, 0.97, f"max gap = {gap:.3f}",
-                    transform=ax.transAxes, ha="right", va="top",
-                    fontsize=8, color="red",
-                    bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
+        colors = [PALETTE["fcc"] if g == "woman" else "#888888" for g in rates.index]
+        rates["rate"].plot.bar(ax=axes[0], color=colors, alpha=0.85)
+        axes[0].set_title("By gender")
+        axes[0].set_ylabel("Working-as-developer rate")
+        axes[0].set_ylim(0, max(0.4, rates["rate"].max() * 1.4))
+        axes[0].tick_params(axis="x", labelrotation=0)
+        for i, v in enumerate(rates["rate"]):
+            axes[0].text(i, v + 0.005, f"{v:.1%}", ha="center", fontsize=10,
+                         fontweight="bold")
+        gap = rates["rate"].max() - rates["rate"].min()
+        axes[0].text(0.98, 0.97, f"max gap = {gap:.3f}",
+                     transform=axes[0].transAxes, ha="right", va="top",
+                     fontsize=9, color="red",
+                     bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
+
+        # By gender x age
+        df["gender_age"] = df["gender_clean"] + "_" + df["age_group"]
+        rates2 = (
+            df.groupby("gender_age")["paid_contributor"]
+              .agg(["mean", "count"])
+              .rename(columns={"mean": "rate", "count": "n"})
+              .sort_values("rate", ascending=False)
+        )
+        colors2 = [PALETTE["fcc"] if "woman" in g else "#888888"
+                   for g in rates2.index]
+        rates2["rate"].plot.bar(ax=axes[1], color=colors2, alpha=0.85)
+        axes[1].set_title("By gender x age")
+        axes[1].set_ylabel("Working-as-developer rate")
+        axes[1].set_ylim(0, max(0.4, rates2["rate"].max() * 1.4))
+        axes[1].tick_params(axis="x", labelrotation=20, labelsize=8)
+        for i, v in enumerate(rates2["rate"]):
+            axes[1].text(i, v + 0.005, f"{v:.1%}", ha="center", fontsize=8)
 
         plt.tight_layout()
-        out = f"{PLOTS}/so_sensitive_group_rates.png"
+        out = f"{PLOTS}/fcc_sensitive_group_rates.png"
         plt.savefig(out, dpi=150, bbox_inches="tight")
         plt.close()
-        print(f"[SO FE] Saved -> {out}")
-
-
-# SECTION 2 -- GITHUB OSS SURVEY 2017
-
-class GHFeatureEngineering:
-
-    FEATURE_COLS = [
-        "pro_experience_yrs", "oss_experience_yrs",
-        "find_answers_score", "receive_help_score",
-        "contributor_help_score", "find_maintainer_score",
-        "had_negative_exp", "had_harassment", "is_high_income_country",
-    ]
-
-    RENAME = {
-        "GENDER": "gender_raw",
-        "PROFESSIONAL.EXPERIENCE": "pro_experience",
-        "CONTRIBUTING.TO.OSS": "oss_experience",
-        "EMPLOYMENT.STATUS": "employment",
-        "FIND.ANSWERS": "find_answers",
-        "RECEIVE.HELP": "receive_help",
-        "CONTRIBUTOR.HELP": "contributor_help",
-        "FIND.MAINTAINER": "find_maintainer",
-        "NEGATIVE.EXPERIENCES": "negative_exp",
-        "HARASSMENT.RECEIVED": "harassment",
-        "LOCATION": "location",
-    }
-
-    EXP_MAP  = {"< 1 year": 0.5, "1-2 years": 1.5, "3-5 years": 4.0,
-                "6-10 years": 8.0, "11+ years": 13.0}
-    FREQ_MAP = {"Never": 0, "Rarely": 1, "Sometimes": 2, "Often": 3, "Always": 4}
-    HIGH_INCOME = {"United States", "Germany", "United Kingdom", "Canada",
-                   "Australia", "Switzerland", "Netherlands", "Sweden"}
-
-    def load(self, path: str = IN_GH) -> "GHFeatureEngineering":
-        if not os.path.exists(path):
-            raise FileNotFoundError(
-                f"[GH FE] {path} not found -- run Notebook 1 first."
-            )
-        self.df = pd.read_csv(path, low_memory=False)
-        print(f"\n[GH FE] Loaded {len(self.df):,} rows from {path}")
-        return self
-
-    def engineer(self) -> "GHFeatureEngineering":
-        df = self.df.copy()
-        df = df.rename(columns={k: v for k, v in self.RENAME.items()
-                                 if k in df.columns})
-
-        def _gender(g):
-            g = str(g).strip()
-            if g in ("Man", "Male", "male", "man"):         return "man"
-            if g in ("Woman", "Female", "female", "woman"): return "woman"
-            return "other"
-        df["gender_clean"] = df["gender_raw"].apply(_gender)
-
-        paid_kw = ["Employed full-time", "Employed part-time",
-                   "Self-employed", "Freelance", "Contractor"]
-        df["paid_contributor"] = df["employment"].apply(
-            lambda x: 1 if any(k in str(x) for k in paid_kw) else 0
-        )
-
-        df["pro_experience_yrs"] = (
-            df["pro_experience"].map(self.EXP_MAP).fillna(4.0)
-            if "pro_experience" in df.columns else 4.0
-        )
-        df["oss_experience_yrs"] = (
-            df["oss_experience"].map(self.EXP_MAP).fillna(4.0)
-            if "oss_experience" in df.columns else 4.0
-        )
-
-        for src, dst in [("find_answers",     "find_answers_score"),
-                         ("receive_help",     "receive_help_score"),
-                         ("contributor_help", "contributor_help_score"),
-                         ("find_maintainer",  "find_maintainer_score")]:
-            df[dst] = (df[src].map(self.FREQ_MAP).fillna(2.0)
-                       if src in df.columns else 2.0)
-
-        def _to_bin(v):
-            return 1 if any(w in str(v).lower()
-                            for w in ["yes", "true", "1", "often", "always"]) else 0
-
-        df["had_negative_exp"] = (df["negative_exp"].apply(_to_bin)
-                                  if "negative_exp" in df.columns else 0)
-        df["had_harassment"]   = (df["harassment"].apply(_to_bin)
-                                  if "harassment"   in df.columns else 0)
-        df["is_high_income_country"] = (
-            df["location"].isin(self.HIGH_INCOME).astype(int)
-            if "location" in df.columns else 0
-        )
-
-        df = df[df["gender_clean"].isin(["man", "woman"])].copy()
-        self.df_engineered = df
-        print(f"[GH FE] Final shape: {df.shape} | "
-              f"gender: {df['gender_clean'].value_counts().to_dict()}")
-        return self
-
-    def save(self, path: str = f"{OUT}/gh_preprocessed.csv") -> "GHFeatureEngineering":
-        keep = [c for c in self.FEATURE_COLS + ["paid_contributor", "gender_clean"]
-                if c in self.df_engineered.columns]
-        self.df_engineered[keep].to_csv(path, index=False)
-        print(f"[GH FE] Saved -> {path}  ({len(self.df_engineered):,} rows)")
-        return self
+        print(f"[FCC FE] Saved -> {out}")
 
 
 # MAIN
-
 
 if __name__ == "__main__":
     print("\n" + "=" * 65)
     print("  NOTEBOOK 2 -- FEATURE ENGINEERING & PREPROCESSING")
     print("=" * 65)
 
-    #  Stack Overflow 
-    so_fe = SOFeatureEngineering().load().engineer()
+    # Stack Overflow (unchanged)
+    if os.path.exists(IN_SO):
+        so_fe = SOFeatureEngineering().load().engineer()
+        so_fe.save()
+    else:
+        print(f"[SO FE] {IN_SO} not found -- skipping SO section.")
 
-    # Save FIRST before any plots
-    so_fe.save()
-
-    for fn, label in [
-        (so_fe.plot_feature_distributions,  "feature distributions plot"),
-        (so_fe.plot_sensitive_group_rates,  "sensitive group rates plot"),
-    ]:
-        try:
-            fn()
-        except Exception as e:
-            print(f"[SO FE] Warning: {label} failed -- {e}")
-
-    #  GitHub OSS 
-    gh_fe = GHFeatureEngineering().load().engineer()
-    gh_fe.save()
+    # FCC (replaces GH OSS)
+    fcc_fe = FCCFeatureEngineering().load().engineer()
+    fcc_fe.save()
+    try:
+        fcc_fe.plot_feature_distributions()
+        fcc_fe.plot_sensitive_group_rates()
+    except Exception as e:
+        print(f"[FCC FE] Warning: plot failed -- {e}")
 
     print("\n  NOTEBOOK 2 COMPLETE")
     print("  -> data/preprocessed/so_preprocessed.csv")
-    print("  -> data/preprocessed/gh_preprocessed.csv")
+    print("  -> data/preprocessed/fcc_preprocessed.csv")

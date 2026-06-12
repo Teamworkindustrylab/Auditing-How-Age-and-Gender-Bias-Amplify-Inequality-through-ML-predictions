@@ -3,16 +3,17 @@
   NOTEBOOK 5 -- MITIGATION & COMPLIANCE REPORTING
 
   Inputs  : data/preprocessed/so_preprocessed.csv
-            data/preprocessed/gh_preprocessed.csv
+            data/preprocessed/fcc_preprocessed.csv
             outputs/models/so_xgboost.pkl
-            outputs/models/gh_xgboost.pkl
+            outputs/models/fcc_xgboost.pkl
 
   Outputs : outputs/nb5_mitigation_tradeoff.png
             outputs/nb5_eu_compliance_table.png
             outputs/so_mitigation_results.csv
-            outputs/gh_mitigation_results.csv
+            outputs/fcc_mitigation_results.csv
 
   Mitigation strategies
+  ---------------------
   A. Reweighing (Kamiran & Calders 2012)
      Per-sample weights inversely proportional to group x label frequency.
      Retrain XGBoost with these weights.
@@ -21,11 +22,8 @@
      Per-group binary-search for the threshold that equalises positive-
      prediction rate to the global rate. No retraining needed.
 
-  Note on train/test split
-  NB5 re-splits from scratch with the same random_state=42 used in NB3.
-  This gives the same test partition, so baseline AUC/DPD match NB3 exactly.
-  The reweighed model is retrained fresh here (not saved in NB3).
-
+  Compliance threshold : |DPD| <= 0.10  (consistent across NB3/NB5/NB6,
+                                           grounded in EEOC's 80% rule)
 """
 
 import os
@@ -46,30 +44,36 @@ warnings.filterwarnings("ignore")
 np.random.seed(42)
 
 IN_SO   = "data/preprocessed/so_preprocessed.csv"
-IN_GH   = "data/preprocessed/gh_preprocessed.csv"
+IN_FCC  = "data/preprocessed/fcc_preprocessed.csv"
 OUT     = "outputs"
 MDL_DIR = "outputs/models"
 os.makedirs(OUT, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "gh": "#24292e",
+PALETTE = {"so": "#f48024", "fcc": "#0a0a23",
            "ok": "#27ae60", "bad": "#e74c3c", "bg": "#fafafa"}
 
 SO_BASE_FEATURES = [
     "ed_level_enc", "is_employed", "is_remote", "is_student",
     "years_code", "years_code_pro",
 ]
-GH_FEATURE_COLS = [
-    "pro_experience_yrs", "oss_experience_yrs",
-    "find_answers_score", "receive_help_score",
-    "contributor_help_score", "find_maintainer_score",
-    "had_negative_exp", "had_harassment", "is_high_income_country",
+FCC_FEATURE_COLS = [
+    "months_programming",
+    "hours_learning_per_week",
+    "num_learning_resources",
+    "attended_bootcamp",
+    "is_under_employed",
+    "is_ethnic_minority",
+    "has_degree",
+    "is_high_income_country",
+    "log_expected_earning",
 ]
 SENSITIVE_DEFS = {
     "S1_age_group":     "age_group",
     "S2_age_exp_pro":   "age_exp_pro",
     "S3_age_exp_total": "age_exp_total",
 }
-DPD_THRESHOLD = 0.05
+DPD_THRESHOLD = 0.10   # aligned with README and NB3/NB6
+
 
 # SHARED MITIGATION HELPERS
 
@@ -84,17 +88,9 @@ def reweigh_samples(y: pd.Series, g: pd.Series) -> np.ndarray:
         ) / (n * len(grp))
     return df_w.apply(lambda r: lut.get((r.g, r.y), 1.0), axis=1).values
 
-#Kamiran & Calders (2012)
-#groups that are underrepresented in the training data relative to their
-#label frequency get higher sample weights, so the model pays more attention to them during training.
 
 def threshold_calibrate(model, X_te: pd.DataFrame,
                         g_te: pd.Series) -> np.ndarray:
-    """
-    Post-processing: per-group threshold binary search to equalise
-    positive-prediction rate to global predicted rate.
-    Works for binary and multi-class sensitive attributes.
-    """
     y_prob      = model.predict_proba(X_te)[:, 1]
     global_rate = (y_prob >= 0.5).mean()
 
@@ -112,16 +108,12 @@ def threshold_calibrate(model, X_te: pd.DataFrame,
         y_pred[mask] = (probs >= (lo + hi) / 2).astype(int)
     return y_pred
 
-#After the model produces probability scores, 
-#it finds a different decision threshold for each sensitive group via binary search.
 
 def _max_gap(y_pred, g_series) -> float:
-    """Max - min positive-prediction rate across all groups."""
     groups = np.unique(g_series)
     rates  = [y_pred[g_series == grp].mean() for grp in groups]
     return float(max(rates) - min(rates))
 
-#max minus min positive-prediction rate
 
 def _load_xgb(prefix: str):
     for name in [f"{prefix}_xgboost.pkl", f"{prefix}_xgb.pkl"]:
@@ -134,9 +126,6 @@ def _load_xgb(prefix: str):
         f"Run Notebook 3 first."
     )
 
-#Tries two filename patterns, so_xgboost.pkl first, then the legacy so_xgb.pkl 
-#and raises an error if neither is found. This is for backward compatibility with older runs of NB3.
-
 
 # SECTION 1 -- STACK OVERFLOW 2024
 
@@ -148,7 +137,7 @@ class SOMitigation:
                 f"[SO MIT] {IN_SO} not found -- run Notebook 2 first."
             )
         df = pd.read_csv(IN_SO)
-        devtype_cols      = [c for c in df.columns if c.startswith("devtype_")]
+        devtype_cols = [c for c in df.columns if c.startswith("devtype_")]
         self.feature_cols = [c for c in SO_BASE_FEATURES + devtype_cols
                              if c in df.columns]
         self.df = df
@@ -161,7 +150,6 @@ class SOMitigation:
         X         = df[self.feature_cols]
         y         = df["above_median_salary"]
         tradeoffs = {}
-
         base_model = _load_xgb("so")
 
         print("\n" + "=" * 60)
@@ -170,20 +158,16 @@ class SOMitigation:
 
         for key, col in SENSITIVE_DEFS.items():
             if col not in df.columns:
-                print(f"  [skip] {col} not in DataFrame")
                 continue
-
             g = df[col]
             X_tr, X_te, y_tr, y_te, g_tr, g_te = train_test_split(
                 X, y, g, test_size=0.25, stratify=y, random_state=42
             )
 
-            # Baseline (loaded model, no mitigation)
             y_base   = base_model.predict(X_te)
             auc_base = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
             dpd_base = _max_gap(y_base, g_te.values)
 
-            # A: Reweighing
             sw = reweigh_samples(y_tr, g_tr)
             xgb_rw = XGBClassifier(
                 n_estimators=200, max_depth=4, learning_rate=0.05,
@@ -195,7 +179,6 @@ class SOMitigation:
             auc_rw  = roc_auc_score(y_te, xgb_rw.predict_proba(X_te)[:, 1])
             dpd_rw  = _max_gap(y_rw, g_te.values)
 
-            # B: Threshold calibration
             y_to   = threshold_calibrate(base_model, X_te, g_te)
             auc_to = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
             dpd_to = _max_gap(y_to, g_te.values)
@@ -212,7 +195,6 @@ class SOMitigation:
                 print(f"    {strat:12s}  AUC={a:.4f}  |DPD|={d:.4f}  [{flag}]")
 
         self.tradeoffs = tradeoffs
-
         rows = []
         for key, res in tradeoffs.items():
             for strat, (auc, dpd) in res.items():
@@ -225,31 +207,19 @@ class SOMitigation:
         return tradeoffs
 
 
-        """
-        Baseline — just loads the NB3 model and measures its DPD on the test set with no changes.
-        Reweighing — computes sample weights for the training set, trains a fresh XGBoost with those weights, measures DPD on the same test set. 
-        The model architecture is identical to NB3,only the sample weights differ.
-        Threshold calibration — takes the baseline NB3 model, applies threshold_calibrate() to get per-group thresholds,
-        measures DPD on the resulting predictions.
-        
-        + AUC and DPD are reported as the tuple.
-        
-        
-        """
+# SECTION 2 -- freeCodeCamp 2018 (REPLACES GH OSS 2017)
 
-# SECTION 2 -- GITHUB OSS SURVEY 2017
+class FCCMitigation:
 
-class GHMitigation:
-
-    def load(self) -> "GHMitigation":
-        if not os.path.exists(IN_GH):
+    def load(self) -> "FCCMitigation":
+        if not os.path.exists(IN_FCC):
             raise FileNotFoundError(
-                f"[GH MIT] {IN_GH} not found -- run Notebook 2 first."
+                f"[FCC MIT] {IN_FCC} not found -- run Notebook 2 first."
             )
-        self.df = pd.read_csv(IN_GH)
-        self.feature_cols = [c for c in GH_FEATURE_COLS
+        self.df = pd.read_csv(IN_FCC)
+        self.feature_cols = [c for c in FCC_FEATURE_COLS
                              if c in self.df.columns]
-        print(f"\n[GH MIT] Loaded {len(self.df):,} rows")
+        print(f"\n[FCC MIT] Loaded {len(self.df):,} rows")
         return self
 
     def run(self) -> dict:
@@ -262,20 +232,18 @@ class GHMitigation:
             X, y, g, test_size=0.25, stratify=y, random_state=42
         )
 
-        base_model = _load_xgb("gh")
+        base_model = _load_xgb("fcc")
         g_bin_te   = (g_te == "woman").astype(int)
 
-        # Baseline
         y_base   = base_model.predict(X_te)
         auc_base = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
         dpd_base = abs(float(demographic_parity_difference(
             y_te, y_base, sensitive_features=g_bin_te
         )))
 
-        # Reweighing
         sw = reweigh_samples(y_tr, g_tr)
         xgb_rw = XGBClassifier(
-            n_estimators=200, max_depth=3, learning_rate=0.05,
+            n_estimators=200, max_depth=4, learning_rate=0.05,
             subsample=0.8, colsample_bytree=0.8,
             eval_metric="logloss", random_state=42, verbosity=0,
         )
@@ -286,7 +254,6 @@ class GHMitigation:
             y_te, y_rw, sensitive_features=g_bin_te
         )))
 
-        # Threshold calibration
         y_to   = threshold_calibrate(base_model, X_te, g_te)
         auc_to = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
         dpd_to = abs(float(demographic_parity_difference(
@@ -300,7 +267,7 @@ class GHMitigation:
         }
 
         print("\n" + "=" * 60)
-        print("GH OSS 2017 -- MITIGATION")
+        print("FCC 2018 -- MITIGATION")
         print("=" * 60)
         for strat, (a, d) in self.tradeoff.items():
             flag = "PASS" if d <= DPD_THRESHOLD else "FAIL"
@@ -309,17 +276,15 @@ class GHMitigation:
         rows = [{"strategy": s, "auc": a, "dpd": d,
                  "meets_threshold": d <= DPD_THRESHOLD}
                 for s, (a, d) in self.tradeoff.items()]
-        pd.DataFrame(rows).to_csv(f"{OUT}/gh_mitigation_results.csv",
+        pd.DataFrame(rows).to_csv(f"{OUT}/fcc_mitigation_results.csv",
                                   index=False)
-        print(f"\n  Saved -> {OUT}/gh_mitigation_results.csv")
+        print(f"\n  Saved -> {OUT}/fcc_mitigation_results.csv")
         return self.tradeoff
-
-#same as for previous 
 
 
 # PLOTS
 
-def plot_mitigation_tradeoff(so_tradeoffs: dict, gh_tradeoff: dict):
+def plot_mitigation_tradeoff(so_tradeoffs: dict, fcc_tradeoff: dict):
     markers = {"baseline": "X", "reweigh": "s", "threshold": "o"}
     labels  = {"baseline": "Baseline", "reweigh": "Reweighing",
                "threshold": "Threshold Cal."}
@@ -352,20 +317,20 @@ def plot_mitigation_tradeoff(so_tradeoffs: dict, gh_tradeoff: dict):
         ax.set_title(f"SO 2024 -- {key}", fontsize=9, fontweight="bold")
         ax.legend(fontsize=7)
 
-    ax_gh = axes[-1]
-    ax_gh.set_facecolor("#f0f4ff")
-    for strat, (auc, dpd) in gh_tradeoff.items():
-        ax_gh.scatter(dpd, auc, s=220, color=PALETTE["gh"],
-                      marker=markers[strat], zorder=5,
-                      edgecolors="white", lw=1.2, label=labels[strat])
-        ax_gh.annotate(labels[strat], (dpd, auc),
-                       textcoords="offset points", xytext=(6, 4), fontsize=8)
-    ax_gh.axvline(DPD_THRESHOLD, color=PALETTE["bad"],
-                  linestyle="--", lw=1.5)
-    ax_gh.set_xlabel("|DPD|  ->  lower is fairer")
-    ax_gh.set_ylabel("ROC-AUC")
-    ax_gh.set_title("GH OSS 2017 -- Gender", fontsize=9, fontweight="bold")
-    ax_gh.legend(fontsize=7)
+    ax_fcc = axes[-1]
+    ax_fcc.set_facecolor("#f0f4ff")
+    for strat, (auc, dpd) in fcc_tradeoff.items():
+        ax_fcc.scatter(dpd, auc, s=220, color=PALETTE["fcc"],
+                       marker=markers[strat], zorder=5,
+                       edgecolors="white", lw=1.2, label=labels[strat])
+        ax_fcc.annotate(labels[strat], (dpd, auc),
+                        textcoords="offset points", xytext=(6, 4), fontsize=8)
+    ax_fcc.axvline(DPD_THRESHOLD, color=PALETTE["bad"],
+                   linestyle="--", lw=1.5)
+    ax_fcc.set_xlabel("|DPD|  ->  lower is fairer")
+    ax_fcc.set_ylabel("ROC-AUC")
+    ax_fcc.set_title("FCC 2018 -- Gender", fontsize=9, fontweight="bold")
+    ax_fcc.legend(fontsize=7)
 
     plt.tight_layout()
     out = f"{OUT}/nb5_mitigation_tradeoff.png"
@@ -374,14 +339,14 @@ def plot_mitigation_tradeoff(so_tradeoffs: dict, gh_tradeoff: dict):
     print(f"\n  Saved -> {out}")
 
 
-def plot_eu_compliance_table(so_tradeoffs: dict, gh_tradeoff: dict):
+def plot_eu_compliance_table(so_tradeoffs: dict, fcc_tradeoff: dict):
     so_post_ok = any(
         v["reweigh"][1] <= DPD_THRESHOLD or v["threshold"][1] <= DPD_THRESHOLD
         for v in so_tradeoffs.values()
     )
-    gh_post_ok = (
-        gh_tradeoff["reweigh"][1] <= DPD_THRESHOLD or
-        gh_tradeoff["threshold"][1] <= DPD_THRESHOLD
+    fcc_post_ok = (
+        fcc_tradeoff["reweigh"][1] <= DPD_THRESHOLD or
+        fcc_tradeoff["threshold"][1] <= DPD_THRESHOLD
     )
 
     rows = [
@@ -398,15 +363,16 @@ def plot_eu_compliance_table(so_tradeoffs: dict, gh_tradeoff: dict):
          "NO -- not implemented",
          "NO -- not implemented"),
         (f"|DPD| <= {DPD_THRESHOLD} pre-mitigation",
-         "NO -- all defs exceed threshold",
-         "NO -- exceeds threshold"),
+         "NO -- exceeds threshold",
+         "PASS" if fcc_tradeoff["baseline"][1] <= DPD_THRESHOLD
+                 else "NO -- exceeds threshold"),
         (f"|DPD| <= {DPD_THRESHOLD} post-mitigation",
          "PARTIAL -- some defs/strats" if so_post_ok else "NO",
-         "PARTIAL" if gh_post_ok else "NO"),
+         "PARTIAL" if fcc_post_ok else "NO"),
     ]
     col_labels = ["EU AI Act / GDPR Requirement",
                   "SO 2024 (age bias)",
-                  "GH OSS 2017 (gender bias)"]
+                  "FCC 2018 (gender bias)"]
 
     fig, ax = plt.subplots(figsize=(14, 5), facecolor=PALETTE["bg"])
     ax.axis("off")
@@ -426,9 +392,12 @@ def plot_eu_compliance_table(so_tradeoffs: dict, gh_tradeoff: dict):
             cell.set_facecolor("#f5f5f5")
         elif c > 0:
             t = cell.get_text().get_text()
-            if t.startswith("YES"):     cell.set_facecolor("#d5f5e3")
-            elif t.startswith("NO"):    cell.set_facecolor("#fde8e8")
-            elif t.startswith("PART"):  cell.set_facecolor("#fef9e7")
+            if t.startswith("YES") or t.startswith("PASS"):
+                cell.set_facecolor("#d5f5e3")
+            elif t.startswith("NO"):
+                cell.set_facecolor("#fde8e8")
+            elif t.startswith("PART"):
+                cell.set_facecolor("#fef9e7")
 
     plt.tight_layout()
     out = f"{OUT}/nb5_eu_compliance_table.png"
@@ -444,26 +413,22 @@ if __name__ == "__main__":
     print("  NOTEBOOK 5 -- MITIGATION & COMPLIANCE REPORTING")
     print("=" * 65)
 
-    so_m = SOMitigation().load()
-    so_tradeoffs = so_m.run()
+    so_tradeoffs = {}
+    if os.path.exists(IN_SO):
+        so_m = SOMitigation().load()
+        so_tradeoffs = so_m.run()
 
-    gh_m = GHMitigation().load()
-    gh_tradeoff = gh_m.run()
+    fcc_m = FCCMitigation().load()
+    fcc_tradeoff = fcc_m.run()
 
     try:
-        plot_mitigation_tradeoff(so_tradeoffs, gh_tradeoff)
+        plot_mitigation_tradeoff(so_tradeoffs, fcc_tradeoff)
     except Exception as e:
         print(f"  Warning: tradeoff plot failed -- {e}")
 
     try:
-        plot_eu_compliance_table(so_tradeoffs, gh_tradeoff)
+        plot_eu_compliance_table(so_tradeoffs, fcc_tradeoff)
     except Exception as e:
         print(f"  Warning: compliance table failed -- {e}")
 
-    print("\n" + "=" * 65)
-    print("  NOTEBOOK 5 COMPLETE")
-    print("  -> outputs/nb5_mitigation_tradeoff.png")
-    print("  -> outputs/nb5_eu_compliance_table.png")
-    print("  -> outputs/so_mitigation_results.csv")
-    print("  -> outputs/gh_mitigation_results.csv")
-    print("=" * 65)
+    print("\n  NOTEBOOK 5 COMPLETE")
