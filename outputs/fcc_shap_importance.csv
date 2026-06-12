@@ -1,0 +1,10 @@
+,mean_abs_shap
+log_expected_earning,2.86569
+months_programming,1.0268813
+has_degree,0.31805816
+is_high_income_country,0.25511122
+hours_learning_per_week,0.12081383
+attended_bootcamp,0.099523164
+is_under_employed,0.059143793
+is_ethnic_minority,0.015578916
+num_learning_resources,0.0

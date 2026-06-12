@@ -11,8 +11,9 @@
             data/raw_eda/so_sensitive_group_rates.png
             data/raw_eda/fcc_feature_distributions.png
 
+  
   Sensitive-attribute definitions
-  --------------------------------
+  
   SO:
     S1  age_group       -- binary: young (<35) vs experienced (35+)
     S2  age_exp_pro     -- age x YearsCodePro bracket (junior/mid/senior)
@@ -24,7 +25,6 @@
                            for optional intersectional extension in NB6)
 
   Targets
-  -------
   SO  : above_median_salary (binary)
   FCC : paid_contributor    (binary, = 'Are you already working as a software developer?')
 
@@ -251,18 +251,11 @@ class SOFeatureEngineering:
 #   GH OSS 2017 feature             ->  FCC 2018 analog
 #   ----------------------------------------------------------------
 #   pro_experience_yrs              ->  months_programming / 12
-#   oss_experience_yrs              ->  (dropped -- FCC has no OSS-
-#                                       specific field; replaced with
-#                                       hours_learning_per_week, which
-#                                       captures the same idea of
-#                                       voluntary, unpaid coding effort)
 #   find_answers_score              ->  num_learning_resources (count
 #                                       of distinct online resources
 #                                       the respondent reports using)
 #   receive_help_score              ->  attended_bootcamp (a binary
 #                                       proxy for structured help-seeking)
-#   contributor_help_score          ->  (dropped)
-#   find_maintainer_score           ->  (dropped)
 #   had_negative_exp                ->  is_under_employed
 #   had_harassment                  ->  is_ethnic_minority (proxy for
 #                                       exposure to systemic disadvantage)
@@ -270,8 +263,7 @@ class SOFeatureEngineering:
 #   (new)                           ->  has_degree (bachelor's or higher)
 #   (new)                           ->  log_expected_earning
 #
-# Result: 8 model features, same magnitude as the previous 9.
-
+# Result: 8 model features
 
 class FCCFeatureEngineering:
 
@@ -299,6 +291,7 @@ class FCCFeatureEngineering:
     # specific learning resource. We count them to build the
     # "num_learning_resources" feature, an analog of the OSS-help-
     # seeking ordinal in the previous dataset.
+    
     LEARNING_RESOURCE_COLS = [
         "freeCodeCamp", "Coursera", "edX", "Khan Academy", "Udacity",
         "Udemy", "Codecademy", "Treehouse", "Pluralsight",

@@ -72,7 +72,7 @@ SENSITIVE_DEFS = {
     "S2_age_exp_pro":   "age_exp_pro",
     "S3_age_exp_total": "age_exp_total",
 }
-DPD_THRESHOLD = 0.10   # aligned with README and NB3/NB6
+DPD_THRESHOLD = 0.10 
 
 
 # SHARED MITIGATION HELPERS
@@ -127,7 +127,7 @@ def _load_xgb(prefix: str):
     )
 
 
-# SECTION 1 -- STACK OVERFLOW 2024
+# SECTION 1 STACK OVERFLOW 2024
 
 class SOMitigation:
 
@@ -207,7 +207,7 @@ class SOMitigation:
         return tradeoffs
 
 
-# SECTION 2 -- freeCodeCamp 2018 (REPLACES GH OSS 2017)
+# SECTION 2 freeCodeCamp 2018
 
 class FCCMitigation:
 

@@ -1,0 +1,13 @@
+,dtype,n_unique,null_pct
+What's your gender?,object,3,2.57
+How old are you?,float64,84,2.87
+Are you already working as a software developer?,float64,2,1.22
+"Regarding employment status, are you currently...",object,10,10.6
+About how many months have you been programming for?,float64,167,7.29
+About how many hours do you spend learning each week?,float64,100,9.07
+About how much money do you expect to earn per year at your first developer job (in US Dollars)?,float64,648,55.64
+Which country do you currently live in?,object,187,3.71
+Are you an ethnic minority in your country?,float64,2,3.61
+Do you consider yourself under-employed?,float64,2,44.87
+Have you attended a full-time coding bootcamp?,float64,2,2.57
+What's the highest degree or level of school you have completed?,object,10,2.77

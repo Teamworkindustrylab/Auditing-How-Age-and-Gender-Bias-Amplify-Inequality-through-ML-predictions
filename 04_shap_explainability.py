@@ -15,17 +15,16 @@
 
   Why separate?
 
-  SHAP TreeExplainer on XGBoost is slow. Keeping it separate means we
-  can re-run explainability without re-training and vice versa.
-
+  SHAP TreeExplainer on XGBoost is slow. 
+  
   Key interpretation
   For SO: if years_code / years_code_pro dominate importance it means
-  the model uses seniority as a strong salary proxy -- amplifying the
+  the model uses seniority as a strong salary proxy, amplifying the
   age-based gap measured in NB3.
 
   For FCC: if months_programming / log_expected_earning dominate it
   means the model is largely using effort/aspiration signals rather
-  than gender-correlated structural features -- expect a smaller
+  than gender-correlated structural features,  expect a smaller
   amplification ratio than the SO case.
 
 """
@@ -47,6 +46,7 @@ IN_SO   = "data/preprocessed/so_preprocessed.csv"
 IN_FCC  = "data/preprocessed/fcc_preprocessed.csv"
 MDL_DIR = "outputs/models"
 OUT     = "outputs"
+
 os.makedirs(OUT, exist_ok=True)
 
 PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "bg": "#fafafa"}
@@ -175,7 +175,7 @@ def so_shap_analysis() -> pd.Series:
     return importance
 
 
-# SECTION 2 -- freeCodeCamp 2018 (REPLACES GH OSS 2017)
+# SECTION 2 freeCodeCamp 2018
 
 def fcc_shap_analysis() -> pd.Series:
     print("\n" + "=" * 60)

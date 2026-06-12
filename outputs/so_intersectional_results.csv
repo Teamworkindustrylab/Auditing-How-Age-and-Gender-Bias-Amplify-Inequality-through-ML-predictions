@@ -1,0 +1,7 @@
+subgroup,positive_pred_rate,intersectional_max_dpd,worst_pair,single_attr_dpd_ref,compounding_gap,meets_threshold
+experienced_junior,0.120482,0.978294,experienced_senior vs young_junior,0.566991,0.411303,False
+experienced_mid,0.826021,0.978294,experienced_senior vs young_junior,0.566991,0.411303,False
+experienced_senior,0.993433,0.978294,experienced_senior vs young_junior,0.566991,0.411303,False
+young_junior,0.015139,0.978294,experienced_senior vs young_junior,0.566991,0.411303,False
+young_mid,0.606262,0.978294,experienced_senior vs young_junior,0.566991,0.411303,False
+young_senior,0.962963,0.978294,experienced_senior vs young_junior,0.566991,0.411303,False
