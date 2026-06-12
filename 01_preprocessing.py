@@ -8,10 +8,8 @@ Datasets:
   Dataset 1: Stack Overflow Developer Survey 2024
   Dataset 2: freeCodeCamp New Coder Survey 2018  (REPLACEMENT FOR GH OSS 2017)
 
+  NOTE: Dataset 2 change-log  (week of 2026-06-09)
 
-------------------------------------------------------------------------------
-  Dataset 2 change-log  (week of 2026-06-09)
-------------------------------------------------------------------------------
   The GitHub Open Source Survey 2017 was replaced because its gender
   distribution was 97 % men / 3 % women, far too skewed to support a
   meaningful audit of gender-conditional outcomes: with ~150 women in
@@ -32,16 +30,15 @@ Datasets:
       analysis on dataset 2 (which the GH OSS dataset could not support).
     - Open Database License (ODbL) -- same licence as Stack Overflow.
 
-------------------------------------------------------------------------------
 
-Covers:
+The notebook is organized as follows:
   - Path constants
   - reweigh_samples()
   - StackOverflowPipeline        (unchanged)
   - FCCSurveyPipeline            (replaces GitHubOSSSurveyPipeline)
 
 
-Downstream consumers (model training, SHAP, mitigation, plotting) live in
+Other parts of the project (model training, SHAP, mitigation, plotting) live in
 separate modules and import from here.
 
 
@@ -234,7 +231,7 @@ def eda_so(df: pd.DataFrame) -> pd.DataFrame:
     return summary
 
 
-# 1.3 SO plots (unchanged)
+# 1.3 SO plots for age/salary, DevType, and years of coding experience.
 
 def _classify_age(age_val: str) -> str:
     import re
@@ -330,12 +327,11 @@ def plot_so_years(df: pd.DataFrame):
     print(f"[SO]   Saved -> {out}")
 
 
-# SECTION 2 -- freeCodeCamp NEW CODER SURVEY 2018  (REPLACES GH OSS 2017)
+# SECTION 2 -- freeCodeCamp NEW CODER SURVEY 2018 
 # -----------------------------------------------------------------------
 # Loaded from the official freeCodeCamp GitHub repository as a single
 # CSV. 31,226 respondents, 136 columns, Open Database License (ODbL).
 
-# Original column names used downstream (kept short and stable)
 GENDER_COL          = "What's your gender?"
 AGE_COL             = "How old are you?"
 DEVELOPER_COL       = "Are you already working as a software developer?"
@@ -425,8 +421,7 @@ def plot_fcc_gender_paid(df: pd.DataFrame):
     """
     Two-panel chart:
       Left  - gender distribution
-      Right - working-as-developer rate by gender (this is the data baseline
-              for the bias amplification analysis in NB3).
+      Right - working-as-developer rate by gender.
     """
     def _gender(g):
         g = str(g).strip()
@@ -502,7 +497,7 @@ if __name__ == "__main__":
         print(e)
         print("  [SO] Skipping SO section; please download the CSV and re-run.")
 
-    # freeCodeCamp 2018 (replaces GH OSS 2017)
+    # freeCodeCamp 2018
     fcc_raw = load_fcc()
     fcc_raw.to_csv("data/fcc_raw.csv", index=False)
     print(f"\n  [FCC] Raw data saved -> data/fcc_raw.csv  "
