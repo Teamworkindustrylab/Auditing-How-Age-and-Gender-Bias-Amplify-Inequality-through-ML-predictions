@@ -52,12 +52,13 @@ np.random.seed(42)
 
 IN_SO   = "data/preprocessed/so_preprocessed.csv"
 IN_FCC  = "data/preprocessed/fcc_preprocessed.csv"
+IN_ADULT = "data/preprocessed/adult_preprocessed.csv"
 OUT     = "outputs"
 MDL_DIR = "outputs/models"
 os.makedirs(OUT,     exist_ok=True)
 os.makedirs(MDL_DIR, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23",
+PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32",
            "ok": "#27ae60", "bad": "#e74c3c", "bg": "#fafafa"}
 
 SO_BASE_FEATURES = [
@@ -76,6 +77,15 @@ FCC_FEATURE_COLS = [
     "has_degree",
     "is_high_income_country",
     "log_expected_earning",
+]
+
+# UCI Adult / Census Income feature set (deliberately excludes
+# `relationship` and `fnlwgt` -- see NB2 docstring for why)
+ADULT_BASE_FEATURES = [
+    "education_num", "hours_per_week",
+    "log_capital_gain", "log_capital_loss",
+    "is_married", "is_government_employee", "is_self_employed",
+    "is_us",
 ]
 
 SENSITIVE_DEFS = {
@@ -339,6 +349,100 @@ class FCCBiasAmplification:
         return results
 
 
+# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# ----------------------------------------------------------------------
+# Structurally mirrors FCCBiasAmplification: single binary sensitive
+# attribute (gender_clean), fairlearn DPD/EOD directly (no multi-group
+# max-gap fallback needed, unlike SO's S1/S2/S3 setup).
+
+class AdultBiasAmplification:
+
+    def load(self, path: str = IN_ADULT) -> "AdultBiasAmplification":
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"[ADULT] {path} not found -- run Notebook 2 first."
+            )
+        df = pd.read_csv(path)
+        occ_cols = [c for c in df.columns if c.startswith("occ_")]
+        self.feature_cols = [c for c in ADULT_BASE_FEATURES + occ_cols
+                             if c in df.columns]
+        self.df = df
+        print(f"\n[ADULT] Loaded {len(df):,} rows | "
+              f"{len(self.feature_cols)} feature columns")
+        return self
+
+    def data_baseline(self) -> float:
+        df = self.df
+        print("\n" + "=" * 60)
+        print("ADULT -- STAGE 1: DATA BIAS BASELINE")
+        print("=" * 60)
+        stats = (
+            df.groupby("gender_clean")["above_50k"]
+              .agg(["mean", "count"])
+              .rename(columns={"mean": "above_50k_rate", "count": "n"})
+        )
+        print(stats.to_string())
+        m = stats.loc["man",   "above_50k_rate"] if "man"   in stats.index else np.nan
+        w = stats.loc["woman", "above_50k_rate"] if "woman" in stats.index else np.nan
+        gap = float(m - w)
+        print(f"\n  Gap (man - woman): {gap:.4f}")
+        self.gap_data = gap
+        return gap
+
+    def train(self) -> "AdultBiasAmplification":
+        X = self.df[self.feature_cols]
+        y = self.df["above_50k"]
+        g = self.df["gender_clean"]
+
+        X_tr, X_te, y_tr, y_te, g_tr, g_te = train_test_split(
+            X, y, g, test_size=0.25, stratify=y, random_state=42
+        )
+        print("\n" + "=" * 60)
+        print("ADULT -- STAGE 2: MODEL TRAINING")
+        print("=" * 60)
+        print(f"  Features used: {self.feature_cols}")
+        print(f"  Train: {len(X_tr):,}  Test: {len(X_te):,}")
+
+        self.fitted = train_and_eval(X_tr, X_te, y_tr, y_te)
+        self.X_tr, self.X_te = X_tr, X_te
+        self.y_tr, self.y_te = y_tr, y_te
+        self.g_tr, self.g_te = g_tr, g_te
+
+        for name, res in self.fitted.items():
+            p = f"{MDL_DIR}/adult_{_slug(name)}.pkl"
+            with open(p, "wb") as f:
+                pickle.dump(res["model"], f)
+            print(f"  Model saved -> {p}")
+        return self
+
+    def measure_amplification(self) -> dict:
+        results = {}
+        print("\n" + "=" * 60)
+        print("ADULT -- STAGE 3: BIAS AMPLIFICATION")
+        print("=" * 60)
+        g_bin = (self.g_te == "woman").astype(int).values
+        for name, res in self.fitted.items():
+            dpd = float(demographic_parity_difference(
+                self.y_te.values, res["y_pred"],
+                sensitive_features=g_bin))
+            eod = float(equalized_odds_difference(
+                self.y_te.values, res["y_pred"],
+                sensitive_features=g_bin))
+            amp = abs(dpd) / (abs(self.gap_data) + 1e-9)
+            print(f"\n  {name}: DPD={dpd:+.4f}  EOD={eod:+.4f}  "
+                  f"Amplification={amp:.2f}x")
+            results[name] = dict(dpd=dpd, eod=eod, amplification=amp,
+                                 auc=res["auc"])
+        self.bias_results = results
+        rows = [{"model": k, "data_gap": self.gap_data,
+                 "dpd": v["dpd"], "eod": v["eod"],
+                 "amplification": v["amplification"], "auc": v["auc"]}
+                for k, v in results.items()]
+        pd.DataFrame(rows).to_csv(f"{OUT}/adult_bias_results.csv", index=False)
+        print(f"\n  Saved -> {OUT}/adult_bias_results.csv")
+        return results
+
+
 # COMPARISON CHART
 
 def plot_amplification_comparison(so: SOBiasAmplification,
@@ -397,6 +501,36 @@ def plot_amplification_comparison(so: SOBiasAmplification,
     print(f"\n  Saved -> {out}")
 
 
+def plot_amplification_adult(adult: "AdultBiasAmplification"):
+    """
+    Single-panel chart for Adult, parallel in style to the FCC panel
+    above. Kept as its own function rather than folded into
+    plot_amplification_comparison() so the existing SO/FCC chart logic
+    -- already validated -- doesn't need to be touched.
+    """
+    fig, ax = plt.subplots(figsize=(7, 6), facecolor=PALETTE["bg"])
+    ax.set_facecolor("#eef9f0")
+    gkeys = list(adult.bias_results.keys())
+    colors = [PALETTE["adult"], "#1b5e20"]
+    for i, (mname, v) in enumerate(adult.bias_results.items()):
+        ax.bar(i, v["amplification"], 0.5, label=mname,
+               color=colors[i % len(colors)], alpha=0.85)
+        ax.text(i, v["amplification"] + 0.02, f"{v['amplification']:.2f}x",
+                ha="center", fontsize=9)
+    ax.axhline(1.0, color="black", linestyle="--", lw=1.5,
+               label="No amplification (1.0x)")
+    ax.set_xticks(range(len(gkeys)))
+    ax.set_xticklabels([k.replace(" ", "\n") for k in gkeys], fontsize=9)
+    ax.set_ylabel("Amplification ratio")
+    ax.set_title("UCI Adult -- Gender", fontweight="bold")
+    ax.legend(fontsize=8)
+    plt.tight_layout()
+    out = f"{OUT}/nb3_amplification_adult_chart.png"
+    plt.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"\n  Saved -> {out}")
+
+
 # MAIN
 
 if __name__ == "__main__":
@@ -423,5 +557,18 @@ if __name__ == "__main__":
             plot_amplification_comparison(so, fcc)
         except Exception as e:
             print(f"  Warning: comparison chart failed -- {e}")
+
+    # UCI Adult / Census Income (new)
+    if os.path.exists(IN_ADULT):
+        adult = AdultBiasAmplification().load()
+        adult.data_baseline()
+        adult.train()
+        adult.measure_amplification()
+        try:
+            plot_amplification_adult(adult)
+        except Exception as e:
+            print(f"  Warning: Adult amplification chart failed -- {e}")
+    else:
+        print(f"[ADULT] {IN_ADULT} missing -- skipping Adult section.")
 
     print("\n  NOTEBOOK 3 COMPLETE")

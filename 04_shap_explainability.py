@@ -44,12 +44,13 @@ np.random.seed(42)
 
 IN_SO   = "data/preprocessed/so_preprocessed.csv"
 IN_FCC  = "data/preprocessed/fcc_preprocessed.csv"
+IN_ADULT = "data/preprocessed/adult_preprocessed.csv"
 MDL_DIR = "outputs/models"
 OUT     = "outputs"
 
 os.makedirs(OUT, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "bg": "#fafafa"}
+PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32", "bg": "#fafafa"}
 
 SO_BASE_FEATURES = [
     "ed_level_enc", "is_employed", "is_remote", "is_student",
@@ -65,6 +66,12 @@ FCC_FEATURE_COLS = [
     "has_degree",
     "is_high_income_country",
     "log_expected_earning",
+]
+ADULT_BASE_FEATURES = [
+    "education_num", "hours_per_week",
+    "log_capital_gain", "log_capital_loss",
+    "is_married", "is_government_employee", "is_self_employed",
+    "is_us",
 ]
 
 
@@ -89,6 +96,11 @@ def _find_model(prefix: str) -> str:
 def _get_so_features(df: pd.DataFrame) -> list:
     devtype = [c for c in df.columns if c.startswith("devtype_")]
     return [c for c in SO_BASE_FEATURES + devtype if c in df.columns]
+
+
+def _get_adult_features(df: pd.DataFrame) -> list:
+    occ = [c for c in df.columns if c.startswith("occ_")]
+    return [c for c in ADULT_BASE_FEATURES + occ if c in df.columns]
 
 
 def run_shap(model, X: pd.DataFrame) -> tuple[pd.Series, np.ndarray]:
@@ -211,26 +223,86 @@ def fcc_shap_analysis() -> pd.Series:
     return importance
 
 
+# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+
+def adult_shap_analysis() -> pd.Series:
+    print("\n" + "=" * 60)
+    print("ADULT -- SHAP EXPLAINABILITY")
+    print("=" * 60)
+
+    df    = pd.read_csv(IN_ADULT)
+    fcols = _get_adult_features(df)
+    X     = df[fcols]
+
+    model_path = _find_model("adult")
+    model      = _load_model(model_path)
+    print(f"  Model: {model_path}")
+    print(f"  Features: {len(fcols)}, Samples: {len(X):,}")
+
+    importance, shap_array = run_shap(model, X)
+    print(f"\n  Feature importances (mean |SHAP|):")
+    print(importance.to_string())
+    importance.to_csv(f"{OUT}/adult_shap_importance.csv",
+                      header=["mean_abs_shap"])
+
+    # `is_married` is the closest thing to a gender proxy left in this
+    # feature set (relationship was deliberately excluded in NB2 for
+    # being too direct a proxy). A high share here is the Adult-dataset
+    # analog of SO's years_code_pro proxy-discrimination story.
+    proxy_cols = [c for c in ["is_married", "hours_per_week", "education_num"]
+                 if c in importance.index]
+    proxy_share = importance[proxy_cols].sum() / importance.sum() * 100
+    print(f"\n  is_married/hours/education share of total importance: "
+          f"{proxy_share:.1f}%")
+
+    _save_bar_only(importance, PALETTE["adult"],
+                   ["married", "hours", "education"],
+                   "UCI Adult -- income prediction",
+                   f"{OUT}/nb4_shap_adult.png")
+    return importance
+
+
 # CROSS-DATASET COMPARISON
 
-def plot_shap_comparison(so_imp: pd.Series, fcc_imp: pd.Series):
-    so_n = (so_imp / so_imp.sum()).head(10)
-    fcc_n = (fcc_imp / fcc_imp.sum()).head(10)
+def plot_shap_comparison(so_imp: pd.Series = None, fcc_imp: pd.Series = None,
+                         adult_imp: pd.Series = None):
+    """
+    N-way version: any of the three datasets may be None (skipped if
+    its model/preprocessed CSV wasn't available), and the chart adapts
+    to however many are actually present (minimum 2 to be worth plotting).
+    """
+    series = {}
+    if so_imp is not None:
+        series["SO 2024"] = (so_imp, PALETTE["so"])
+    if fcc_imp is not None:
+        series["FCC 2018"] = (fcc_imp, PALETTE["fcc"])
+    if adult_imp is not None:
+        series["UCI Adult"] = (adult_imp, PALETTE["adult"])
 
-    all_feats = list(dict.fromkeys(list(so_n.index) + list(fcc_n.index)))
+    if len(series) < 2:
+        print("  Skipping cross-dataset SHAP comparison -- need at least "
+              "2 datasets with importance available.")
+        return
+
+    normed = {name: (imp / imp.sum()).head(10) for name, (imp, _) in series.items()}
+    all_feats = list(dict.fromkeys(
+        [f for s in normed.values() for f in s.index]
+    ))
     y = np.arange(len(all_feats))
+    n = len(series)
+    width = 0.8 / n
 
     fig, ax = plt.subplots(figsize=(12, 8), facecolor=PALETTE["bg"])
-    ax.barh(y - 0.2, [so_n.get(f, 0) for f in all_feats], 0.35,
-            label="SO 2024", color=PALETTE["so"], alpha=0.85)
-    ax.barh(y + 0.2, [fcc_n.get(f, 0) for f in all_feats], 0.35,
-            label="FCC 2018", color=PALETTE["fcc"], alpha=0.85)
+    for i, (name, (imp, color)) in enumerate(series.items()):
+        offset = (i - (n - 1) / 2) * width
+        ax.barh(y + offset, [normed[name].get(f, 0) for f in all_feats], width,
+                label=name, color=color, alpha=0.85)
     ax.set_yticks(y)
     ax.set_yticklabels(all_feats, fontsize=9)
     ax.set_xlabel("Normalised mean |SHAP| (share of total importance)")
     ax.set_title(
         "Cross-Dataset SHAP Comparison\n"
-        "SO 2024 (salary) vs FCC 2018 (working-as-developer)",
+        + " vs ".join(series.keys()),
         fontweight="bold"
     )
     ax.legend(fontsize=9)
@@ -256,10 +328,15 @@ if __name__ == "__main__":
 
     fcc_imp = fcc_shap_analysis()
 
-    if so_imp is not None:
-        try:
-            plot_shap_comparison(so_imp, fcc_imp)
-        except Exception as e:
-            print(f"  Warning: comparison chart failed -- {e}")
+    adult_imp = None
+    if os.path.exists(IN_ADULT) and os.path.exists(os.path.join(MDL_DIR, "adult_xgboost.pkl")):
+        adult_imp = adult_shap_analysis()
+    else:
+        print("[ADULT] Skipping -- preprocessed CSV or model missing.")
+
+    try:
+        plot_shap_comparison(so_imp, fcc_imp, adult_imp)
+    except Exception as e:
+        print(f"  Warning: comparison chart failed -- {e}")
 
     print("\n  NOTEBOOK 4 COMPLETE")

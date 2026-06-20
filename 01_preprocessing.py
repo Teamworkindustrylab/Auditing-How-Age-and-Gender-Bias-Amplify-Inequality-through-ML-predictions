@@ -80,17 +80,19 @@ np.random.seed(42)
 
 # Paths
 
-SO_PATH  = "data/survey_results_public.csv"
-FCC_URL  = ("https://raw.githubusercontent.com/freeCodeCamp/"
-            "2018-new-coder-survey/master/raw-data/2018-new-coder-survey.csv")
-FCC_PATH = "data/fcc_raw.csv"
-OUT_DIR  = "data/raw_eda"
+SO_PATH    = "data/survey_results_public.csv"
+FCC_URL    = ("https://raw.githubusercontent.com/freeCodeCamp/"
+              "2018-new-coder-survey/master/raw-data/2018-new-coder-survey.csv")
+FCC_PATH   = "data/fcc_raw.csv"
+ADULT_PATH = "data/adult_raw.csv"
+OUT_DIR    = "data/raw_eda"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 PALETTE = {
-    "so":  "#f48024",
-    "fcc": "#0a0a23",   # freeCodeCamp brand navy
-    "bg":  "#fafafa",
+    "so":    "#f48024",
+    "fcc":   "#0a0a23",   # freeCodeCamp brand navy
+    "adult": "#2e7d32",   # UCI Adult / Census Income
+    "bg":    "#fafafa",
 }
 
 
@@ -468,6 +470,164 @@ def plot_fcc_gender_paid(df: pd.DataFrame):
     print(f"[FCC]   Saved -> {out}")
 
 
+# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# -----------------------------------------------------------------------
+# 48,842 respondents, 14 attributes, donated by Barry Becker from the
+# 1994 Census database (UCI id=20, the combined train+test "Census
+# Income" release -- larger than the classic 32,561-row "Adult" id=2).
+# Binary target: income >$50K/yr. Binary sensitive attribute: sex.
+# Loaded via the `ucimlrepo` package, which is the dataset's current,
+# maintained access path (pip install ucimlrepo).
+
+def load_adult() -> pd.DataFrame:
+    """
+    Load UCI Adult / Census Income, caching to data/adult_raw.csv so
+    subsequent runs don't re-fetch.
+    """
+    if os.path.exists(ADULT_PATH):
+        print(f"\n[ADULT] Loading from cache: {ADULT_PATH}")
+        return pd.read_csv(ADULT_PATH, low_memory=False)
+
+    try:
+        from ucimlrepo import fetch_ucirepo
+    except ImportError:
+        raise RuntimeError(
+            "[ADULT] ucimlrepo not installed.\n"
+            "  Run: pip install ucimlrepo\n"
+            "  Or manually download from "
+            "https://archive.ics.uci.edu/dataset/20/census+income\n"
+            f"  and place the combined CSV at {ADULT_PATH}"
+        )
+
+    print("[ADULT] Fetching via ucimlrepo (id=20, Census Income, "
+          "48,842 rows) ...")
+    census_income = fetch_ucirepo(id=20)
+    df = pd.concat(
+        [census_income.data.features, census_income.data.targets], axis=1
+    )
+
+    # Normalise column names: ucimlrepo preserves the original hyphenated
+    # UCI names ("education-num", "marital-status", ...). Hyphens still
+    # work with bracket indexing but break anything that tries dot access
+    # or simple string ops downstream, so we flatten to snake_case once,
+    # here, rather than re-deriving it in every later notebook.
+    df.columns = [c.strip().replace("-", "_").replace(" ", "_")
+                  for c in df.columns]
+
+    # Known dataset quirk: the official train file (adult.data) encodes
+    # the target as "<=50K"/">50K", while the official test file
+    # (adult.test) encodes it as "<=50K."/">50K." -- trailing period.
+    # ucimlrepo's combined release inherits this inconsistency. Strip it
+    # once here so a later `== ">50K"` string match doesn't silently
+    # drop half the positive class.
+    target_col = [c for c in df.columns if "income" in c.lower()
+                  or "50" in c.lower()]
+    target_col = target_col[0] if target_col else df.columns[-1]
+    df[target_col] = (
+        df[target_col].astype(str).str.strip().str.rstrip(".")
+    )
+    df = df.rename(columns={target_col: "income"})
+
+    os.makedirs("data", exist_ok=True)
+    df.to_csv(ADULT_PATH, index=False)
+    print(f"[ADULT] Cached -> {ADULT_PATH}  "
+          f"({len(df):,} rows, {df.shape[1]} columns)")
+    return df
+
+
+def eda_adult(df: pd.DataFrame) -> pd.DataFrame:
+    print("\n" + "="*60)
+    print("ADULT / CENSUS INCOME -- EDA")
+    print("="*60)
+    print(f"\n  Shape : {df.shape}")
+    print(f"  Columns: {list(df.columns)}")
+
+    # "?" is this dataset's missing-value sentinel on workclass,
+    # occupation, native_country (per the UCI variable table).
+    null_rates = (df.replace("?", np.nan).isnull().mean() * 100).round(2)
+    summary = pd.DataFrame({
+        "dtype":    df.dtypes,
+        "n_unique": df.nunique(),
+        "null_pct": null_rates,
+    })
+    summary.to_csv(f"{OUT_DIR}/adult_eda_summary.csv")
+    print(f"\n  Null rates (%, '?' treated as missing):\n"
+          f"{null_rates.to_string()}")
+
+    print(f"\n  Sex distribution:\n"
+          f"{df['sex'].value_counts(dropna=False).to_string()}")
+    print(f"\n  Sex share (%):\n"
+          f"{(df['sex'].value_counts(normalize=True) * 100).round(2).to_string()}")
+
+    print(f"\n  Income target distribution:\n"
+          f"{df['income'].value_counts(dropna=False).to_string()}")
+
+    age = pd.to_numeric(df["age"], errors="coerce")
+    print(f"\n  Age stats: n={len(age):,}, mean={age.mean():.1f}, "
+          f"median={age.median():.0f}, range={age.min():.0f}-{age.max():.0f}")
+
+    print(f"\n  Top 10 occupations:\n"
+          f"{df['occupation'].value_counts().head(10).to_string()}")
+    print(f"\n  Marital status:\n"
+          f"{df['marital_status'].value_counts().to_string()}")
+    print(f"\n  Relationship (NOTE: excluded from model features in NB2 -- "
+          f"see comment there):\n"
+          f"{df['relationship'].value_counts().to_string()}")
+
+    return summary
+
+
+def plot_adult_sex_income(df: pd.DataFrame):
+    """
+    Two-panel chart, parallel to plot_fcc_gender_paid:
+      Left  - gender distribution
+      Right - >$50K rate by gender
+    """
+    tmp = df.copy()
+    tmp["gender_clean"] = (
+        tmp["sex"].astype(str).str.strip().map({"Male": "man", "Female": "woman"})
+    )
+    tmp["above_50k"] = (tmp["income"].astype(str).str.strip() == ">50K").astype(int)
+    tmp = tmp[tmp["gender_clean"].isin(["man", "woman"])]
+
+    stats = tmp.groupby("gender_clean")["above_50k"].agg(["mean", "count"])
+    print(f"\n[ADULT]   >$50K rate by gender:\n{stats.to_string()}")
+
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), facecolor=PALETTE["bg"])
+    fig.suptitle("UCI Adult/Census Income -- Gender Distribution & >$50K Rate",
+                 fontweight="bold")
+
+    tmp["gender_clean"].value_counts().plot.bar(
+        ax=axes[0], color=PALETTE["adult"], alpha=0.85
+    )
+    axes[0].set_title("Gender distribution")
+    axes[0].set_xlabel("")
+    axes[0].set_ylabel("Count")
+    axes[0].tick_params(axis="x", labelrotation=0)
+    for i, v in enumerate(tmp["gender_clean"].value_counts()):
+        axes[0].text(i, v + 200, f"{v:,}", ha="center", fontsize=9)
+
+    stats["mean"].plot.bar(ax=axes[1], color=PALETTE["adult"], alpha=0.85)
+    axes[1].set_title(">$50K rate by gender")
+    axes[1].set_ylabel("Rate")
+    axes[1].set_ylim(0, max(0.4, stats["mean"].max() * 1.4))
+    axes[1].tick_params(axis="x", labelrotation=0)
+    for i, v in enumerate(stats["mean"]):
+        axes[1].text(i, v + 0.005, f"{v:.1%}", ha="center", fontsize=10,
+                     fontweight="bold")
+    gap = stats["mean"].max() - stats["mean"].min()
+    axes[1].text(0.98, 0.97, f"max gap = {gap:.3f}",
+                 transform=axes[1].transAxes, ha="right", va="top",
+                 fontsize=9, color="red",
+                 bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
+
+    plt.tight_layout()
+    out = f"{OUT_DIR}/adult_gender_income_dist.png"
+    plt.savefig(out, dpi=150, bbox_inches="tight")
+    plt.close()
+    print(f"[ADULT]   Saved -> {out}")
+
+
 # MAIN
 
 if __name__ == "__main__":
@@ -510,6 +670,21 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"  [FCC] Warning: gender/paid plot failed -- {e}")
 
+    # UCI Adult / Census Income
+    try:
+        adult_raw = load_adult()
+        print(f"\n  [ADULT] Raw data ready -> {ADULT_PATH}  "
+              f"({len(adult_raw):,} rows, {len(adult_raw.columns)} columns)")
+        eda_adult(adult_raw)
+        try:
+            plot_adult_sex_income(adult_raw)
+        except Exception as e:
+            print(f"  [ADULT] Warning: gender/income plot failed -- {e}")
+    except RuntimeError as e:
+        print(e)
+        print("  [ADULT] Skipping Adult section; install ucimlrepo and re-run.")
+
     print("\n  NOTEBOOK 1 COMPLETE")
     print("   data/so_raw.csv")
     print("   data/fcc_raw.csv")
+    print("   data/adult_raw.csv")

@@ -42,14 +42,15 @@ import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
-IN_SO  = "data/so_raw.csv"
-IN_FCC = "data/fcc_raw.csv"
-OUT    = "data/preprocessed"
-PLOTS  = "data/raw_eda"
+IN_SO    = "data/so_raw.csv"
+IN_FCC   = "data/fcc_raw.csv"
+IN_ADULT = "data/adult_raw.csv"
+OUT      = "data/preprocessed"
+PLOTS    = "data/raw_eda"
 os.makedirs(OUT,   exist_ok=True)
 os.makedirs(PLOTS, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "bg": "#fafafa"}
+PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32", "bg": "#fafafa"}
 
 TOP_DEVTYPES = [
     "Developer, full-stack",
@@ -495,6 +496,232 @@ class FCCFeatureEngineering:
         print(f"[FCC FE] Saved -> {out}")
 
 
+# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# ----------------------------------------------------------------------
+# Sensitive attribute: gender_clean (man/woman), from `sex`.
+# Bonus intersectional attribute: gender_age_bracket (gender x age
+# bracket), built here so NB6 can read it straight off the preprocessed
+# CSV -- the same pattern SO uses for age_exp_pro, rather than FCC's
+# pattern of deriving the bracket inline inside NB6 itself.
+# Target: above_50k (income > $50K/yr).
+#
+# Feature set is deliberately narrower than the full 14 UCI columns:
+#   - `relationship` (Husband/Wife/Own-child/...) is EXCLUDED. In this
+#     dataset relationship is close to a direct gender proxy -- almost
+#     every "Husband" row is male and almost every "Wife" row is female
+#     -- so including it wouldn't measure indirect/proxy discrimination
+#     the way years_code_pro does for SO; it would just be re-injecting
+#     the sensitive attribute under another name. `marital_status` is
+#     kept (as the binary `is_married`) because it's a softer signal --
+#     correlated with gender but not a near-1:1 encoding of it -- which
+#     is a more defensible proxy-discrimination story.
+#   - `fnlwgt` is EXCLUDED -- it's a Census sampling/representativeness
+#     weight, not a person-level attribute, and is conventionally
+#     dropped in essentially all published treatments of this dataset.
+#   - `race` and the 41-way `native_country` are EXCLUDED from the base
+#     feature set for parity with how FCC keeps geography to a single
+#     coarse `is_high_income_country` flag; native_country collapses to
+#     `is_us` here in the same spirit. Both fields remain in the saved
+#     preprocessed CSV if you want to extend the intersectional analysis
+#     to race or geography later.
+
+class AdultFeatureEngineering:
+
+    FEATURE_COLS = [
+        "education_num", "hours_per_week",
+        "log_capital_gain", "log_capital_loss",
+        "is_married", "is_government_employee", "is_self_employed",
+        "is_us",
+    ]
+
+    TOP_OCCUPATIONS = [
+        "Exec-managerial", "Prof-specialty", "Craft-repair",
+        "Adm-clerical", "Sales", "Other-service",
+        "Machine-op-inspct", "Transport-moving",
+        "Handlers-cleaners", "Tech-support",
+    ]
+
+    def load(self, path: str = IN_ADULT) -> "AdultFeatureEngineering":
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"[ADULT FE] {path} not found -- run Notebook 1 first."
+            )
+        df = pd.read_csv(path, low_memory=False)
+        df.columns = [c.strip().replace("-", "_").replace(" ", "_")
+                      for c in df.columns]
+        self.df = df
+        print(f"\n[ADULT FE] Loaded {len(df):,} rows from {path}")
+        return self
+
+    def engineer(self) -> "AdultFeatureEngineering":
+        df = self.df.copy()
+
+        # Sensitive attribute: gender. Restrict to binary for the same
+        # statistical-power reason FCC does -- this dataset's `sex`
+        # field is already binary-coded (Male/Female only), so no rows
+        # are dropped here in practice.
+        df["gender_clean"] = (
+            df["sex"].astype(str).str.strip().map({"Male": "man", "Female": "woman"})
+        )
+        df = df[df["gender_clean"].isin(["man", "woman"])].copy()
+
+        # Sensitive attribute (bonus): age_group, reusing the SAME
+        # shared _classify_age() used for SO's age_group above -- not a
+        # separate inline lambda, to avoid the kind of missing-value
+        # default drift flagged previously between SO and FCC's age
+        # handling. Adult's `age` field has zero missing values per the
+        # UCI documentation, so the fallback branch is never exercised
+        # here in practice, but using the shared function keeps the
+        # logic in one place rather than three.
+        df["age"] = pd.to_numeric(df["age"], errors="coerce")
+        df["age_group"] = df["age"].apply(_classify_age)
+
+        def _age_bracket(a):
+            if pd.isna(a): return "unknown"
+            if a < 30:     return "junior"
+            if a < 50:     return "mid"
+            return "senior"
+        df["age_bracket"] = df["age"].apply(_age_bracket)
+        df["gender_age_bracket"] = df["gender_clean"] + "_" + df["age_bracket"]
+
+        # Target
+        df["above_50k"] = (
+            df["income"].astype(str).str.strip().str.rstrip(".") == ">50K"
+        ).astype(int)
+
+        # Features
+        df["education_num"] = pd.to_numeric(df["education_num"], errors="coerce")
+        df["education_num"] = df["education_num"].fillna(df["education_num"].median())
+
+        df["hours_per_week"] = pd.to_numeric(df["hours_per_week"], errors="coerce")
+        df["hours_per_week"] = df["hours_per_week"].fillna(df["hours_per_week"].median())
+
+        cg = pd.to_numeric(df["capital_gain"], errors="coerce").fillna(0)
+        cl = pd.to_numeric(df["capital_loss"], errors="coerce").fillna(0)
+        df["log_capital_gain"] = np.log1p(cg)
+        df["log_capital_loss"] = np.log1p(cl)
+
+        ms = df["marital_status"].fillna("").astype(str)
+        df["is_married"] = ms.str.contains("Married", case=False).astype(int)
+
+        wc = df["workclass"].fillna("").astype(str)
+        df["is_government_employee"] = wc.str.contains("gov", case=False).astype(int)
+        df["is_self_employed"]       = wc.str.contains("Self-emp", case=False).astype(int)
+
+        df["is_us"] = (
+            df["native_country"].astype(str).str.strip() == "United-States"
+        ).astype(int)
+
+        # Occupation dummies (parallel to SO's devtype_ dummies)
+        occ = df["occupation"].fillna("").astype(str)
+        occ_cols = []
+        for role in self.TOP_OCCUPATIONS:
+            slug = "occ_" + role.lower().replace("-", "_")
+            df[slug] = (occ == role).astype(int)
+            occ_cols.append(slug)
+        self.occ_cols = occ_cols
+
+        self.df_engineered = df
+        print(f"[ADULT FE] Final shape: {df.shape}")
+        print(f"[ADULT FE] Gender breakdown: "
+              f"{df['gender_clean'].value_counts().to_dict()}")
+        print(f"[ADULT FE] Target rate (>$50K): {df['above_50k'].mean():.3f}")
+        return self
+
+    @property
+    def feature_cols(self) -> list:
+        return self.FEATURE_COLS + self.occ_cols
+
+    def save(self, path: str = f"{OUT}/adult_preprocessed.csv") -> "AdultFeatureEngineering":
+        keep = list(dict.fromkeys(
+            self.feature_cols
+            + ["above_50k", "gender_clean", "age", "age_group",
+               "age_bracket", "gender_age_bracket",
+               "race", "native_country"]
+        ))
+        keep = [c for c in keep if c in self.df_engineered.columns]
+        self.df_engineered[keep].to_csv(path, index=False)
+        print(f"[ADULT FE] Saved -> {path}  "
+              f"({len(self.df_engineered):,} rows, {len(keep)} columns)")
+        return self
+
+    def plot_feature_distributions(self):
+        df = self.df_engineered
+        fig, axes = plt.subplots(2, 3, figsize=(15, 8), facecolor=PALETTE["bg"])
+        fig.suptitle("UCI Adult -- Engineered Feature Distributions",
+                     fontweight="bold")
+
+        numeric_feats = ["education_num", "hours_per_week", "log_capital_gain"]
+        for ax, col in zip(axes[0], numeric_feats):
+            df[col].hist(bins=30, ax=ax, color=PALETTE["adult"], alpha=0.8)
+            ax.set_title(col, fontsize=10)
+            ax.set_ylabel("Count")
+
+        binary_feats = ["is_married", "is_government_employee", "is_self_employed"]
+        for ax, col in zip(axes[1], binary_feats):
+            df[col].value_counts().sort_index().plot.bar(
+                ax=ax, color=PALETTE["adult"], alpha=0.8
+            )
+            ax.set_title(col, fontsize=10)
+            ax.set_ylabel("Count")
+            ax.tick_params(axis="x", labelrotation=0)
+
+        plt.tight_layout()
+        out = f"{PLOTS}/adult_feature_distributions.png"
+        plt.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"[ADULT FE] Saved -> {out}")
+
+    def plot_sensitive_group_rates(self):
+        """>$50K rate by gender, and by gender x age bracket."""
+        df = self.df_engineered
+        fig, axes = plt.subplots(1, 2, figsize=(13, 5), facecolor=PALETTE["bg"])
+        fig.suptitle("UCI Adult -- >$50K Rate by Sensitive Group",
+                     fontweight="bold")
+
+        rates = (
+            df.groupby("gender_clean")["above_50k"]
+              .agg(["mean", "count"])
+              .rename(columns={"mean": "rate", "count": "n"})
+        )
+        colors = [PALETTE["adult"] if g == "woman" else "#888888" for g in rates.index]
+        rates["rate"].plot.bar(ax=axes[0], color=colors, alpha=0.85)
+        axes[0].set_title("By gender")
+        axes[0].set_ylabel(">$50K rate")
+        axes[0].set_ylim(0, max(0.4, rates["rate"].max() * 1.4))
+        axes[0].tick_params(axis="x", labelrotation=0)
+        for i, v in enumerate(rates["rate"]):
+            axes[0].text(i, v + 0.005, f"{v:.1%}", ha="center", fontsize=10,
+                         fontweight="bold")
+        gap = rates["rate"].max() - rates["rate"].min()
+        axes[0].text(0.98, 0.97, f"max gap = {gap:.3f}",
+                     transform=axes[0].transAxes, ha="right", va="top",
+                     fontsize=9, color="red",
+                     bbox=dict(boxstyle="round,pad=0.2", fc="white", alpha=0.7))
+
+        rates2 = (
+            df.groupby("gender_age_bracket")["above_50k"]
+              .agg(["mean", "count"])
+              .rename(columns={"mean": "rate", "count": "n"})
+              .sort_values("rate", ascending=False)
+        )
+        colors2 = [PALETTE["adult"] if "woman" in g else "#888888"
+                   for g in rates2.index]
+        rates2["rate"].plot.bar(ax=axes[1], color=colors2, alpha=0.85)
+        axes[1].set_title("By gender x age bracket")
+        axes[1].set_ylabel(">$50K rate")
+        axes[1].set_ylim(0, max(0.4, rates2["rate"].max() * 1.4))
+        axes[1].tick_params(axis="x", labelrotation=20, labelsize=8)
+        for i, v in enumerate(rates2["rate"]):
+            axes[1].text(i, v + 0.005, f"{v:.1%}", ha="center", fontsize=8)
+
+        plt.tight_layout()
+        out = f"{PLOTS}/adult_sensitive_group_rates.png"
+        plt.savefig(out, dpi=150, bbox_inches="tight")
+        plt.close()
+        print(f"[ADULT FE] Saved -> {out}")
+
+
 # MAIN
 
 if __name__ == "__main__":
@@ -518,6 +745,19 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[FCC FE] Warning: plot failed -- {e}")
 
+    # UCI Adult / Census Income (new)
+    if os.path.exists(IN_ADULT):
+        adult_fe = AdultFeatureEngineering().load().engineer()
+        adult_fe.save()
+        try:
+            adult_fe.plot_feature_distributions()
+            adult_fe.plot_sensitive_group_rates()
+        except Exception as e:
+            print(f"[ADULT FE] Warning: plot failed -- {e}")
+    else:
+        print(f"[ADULT FE] {IN_ADULT} not found -- skipping Adult section.")
+
     print("\n  NOTEBOOK 2 COMPLETE")
     print("  -> data/preprocessed/so_preprocessed.csv")
     print("  -> data/preprocessed/fcc_preprocessed.csv")
+    print("  -> data/preprocessed/adult_preprocessed.csv")

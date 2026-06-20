@@ -61,16 +61,18 @@ np.random.seed(42)
 
 IN_SO   = "data/preprocessed/so_preprocessed.csv"
 IN_FCC  = "data/preprocessed/fcc_preprocessed.csv"
+IN_ADULT = "data/preprocessed/adult_preprocessed.csv"
 OUT     = "outputs"
 MDL_DIR = "outputs/models"
 os.makedirs(OUT, exist_ok=True)
 
 PALETTE = {
-    "so":  "#f48024",
-    "fcc": "#0a0a23",
-    "ok":  "#27ae60",
-    "bad": "#e74c3c",
-    "bg":  "#fafafa",
+    "so":    "#f48024",
+    "fcc":   "#0a0a23",
+    "adult": "#2e7d32",
+    "ok":    "#27ae60",
+    "bad":   "#e74c3c",
+    "bg":    "#fafafa",
 }
 
 SO_BASE_FEATURES = [
@@ -87,6 +89,12 @@ FCC_FEATURE_COLS = [
     "has_degree",
     "is_high_income_country",
     "log_expected_earning",
+]
+ADULT_BASE_FEATURES = [
+    "education_num", "hours_per_week",
+    "log_capital_gain", "log_capital_loss",
+    "is_married", "is_government_employee", "is_self_employed",
+    "is_us",
 ]
 
 DPD_THRESHOLD = 0.10
@@ -112,6 +120,18 @@ def _ref_fcc_dpd() -> float:
     p = os.path.join(OUT, "fcc_bias_results.csv")
     if not os.path.exists(p):
         print("  [warn] fcc_bias_results.csv not found, using fallback 0.0")
+        return 0.0
+    df = pd.read_csv(p)
+    row = df[df["model"] == "XGBoost"]
+    if len(row) == 0:
+        return 0.0
+    return float(abs(row["dpd"].iloc[0]))
+
+
+def _ref_adult_dpd() -> float:
+    p = os.path.join(OUT, "adult_bias_results.csv")
+    if not os.path.exists(p):
+        print("  [warn] adult_bias_results.csv not found, using fallback 0.0")
         return 0.0
     df = pd.read_csv(p)
     row = df[df["model"] == "XGBoost"]
@@ -225,7 +245,7 @@ def so_intersectional():
     y_so = so["above_median_salary"].values
 
     _, X_so_te, _, y_so_te, _, idx_te = train_test_split(
-        X_so, y_so, so.index, test_size=0.2, random_state=42
+        X_so, y_so, so.index, test_size=0.25, stratify=y_so, random_state=42
     )
     so_test = so.loc[idx_te].reset_index(drop=True)
 
@@ -285,7 +305,7 @@ def fcc_intersectional():
     y_fcc = fcc["paid_contributor"].values
 
     _, X_fcc_te, _, y_fcc_te, _, idx_fcc_te = train_test_split(
-        X_fcc, y_fcc, fcc.index, test_size=0.2, random_state=42
+        X_fcc, y_fcc, fcc.index, test_size=0.25, stratify=y_fcc, random_state=42
     )
     fcc_test = fcc.loc[idx_fcc_te].reset_index(drop=True)
 
@@ -326,23 +346,97 @@ def fcc_intersectional():
     return fcc_pos_rates
 
 
+# UCI ADULT  --  gender x age_bracket (NEW)
+# Uses gender_age_bracket straight from the preprocessed CSV -- it was
+# already built in NB2 (AdultFeatureEngineering.engineer()), the same
+# pattern SO uses for age_exp_pro, rather than FCC's pattern of
+# deriving the bracket inline here.
+
+def adult_intersectional():
+    if not os.path.exists(IN_ADULT):
+        print(f"[ADULT] {IN_ADULT} missing -- skipping.")
+        return None
+
+    print("\n" + "=" * 70)
+    print("UCI ADULT -- Intersectional Analysis: Gender x Age Bracket")
+    print("=" * 70)
+
+    adult = pd.read_csv(IN_ADULT)
+    occ_cols = [c for c in adult.columns if c.startswith("occ_")]
+    adult_features = [c for c in ADULT_BASE_FEATURES + occ_cols
+                      if c in adult.columns]
+
+    X_adult = adult[adult_features].fillna(0)
+    y_adult = adult["above_50k"].values
+
+    _, X_adult_te, _, y_adult_te, _, idx_te = train_test_split(
+        X_adult, y_adult, adult.index, test_size=0.25, stratify=y_adult,
+        random_state=42
+    )
+    adult_test = adult.loc[idx_te].reset_index(drop=True)
+
+    adult_xgb    = load_model(os.path.join(MDL_DIR, "adult_xgboost.pkl"))
+    y_adult_pred = adult_xgb.predict(X_adult_te.reset_index(drop=True))
+
+    adult_subgroups = adult_test["gender_age_bracket"].fillna("unknown")
+    adult_pos_rates = subgroup_positive_rates(y_adult_pred, adult_subgroups)
+    adult_max_dpd, adult_worst_pair = intersectional_dpd(adult_pos_rates)
+    ref_dpd = _ref_adult_dpd()
+    adult_compounding = adult_max_dpd - ref_dpd
+
+    print("\nPositive-prediction rates by intersectional subgroup (Adult):")
+    for sg, rate in sorted(adult_pos_rates.items()):
+        flag = " <- lowest" if rate == min(adult_pos_rates.values()) else \
+               " <- highest" if rate == max(adult_pos_rates.values()) else ""
+        print(f"  {sg:25s}: {rate:.4f}{flag}")
+
+    print(f"\nMax intersectional DPD:    {adult_max_dpd:.4f}")
+    print(f"Worst pair:                {adult_worst_pair[0]}  vs  {adult_worst_pair[1]}")
+    print(f"Meets threshold (<= {DPD_THRESHOLD}):   {adult_max_dpd <= DPD_THRESHOLD}")
+    print(f"Compounding gap vs gender-only DPD ({ref_dpd:.4f}): {adult_compounding:+.4f}")
+    if adult_compounding > 0:
+        print("  Intersectionality AMPLIFIES disadvantage beyond gender alone.")
+    else:
+        print("  No additional compounding detected.")
+
+    save_results(adult_pos_rates, adult_max_dpd, adult_worst_pair,
+                 adult_compounding, ref_dpd,
+                 os.path.join(OUT, "adult_intersectional_results.csv"))
+
+    bar_chart(
+        adult_pos_rates, adult_max_dpd,
+        "UCI Adult -- >$50K Prediction Rate\nby Gender x Age Bracket Subgroup",
+        PALETTE["adult"],
+        os.path.join(OUT, "nb6_adult_intersectional_dpd.png"),
+    )
+    return adult_pos_rates
+
+
 # COMBINED HEATMAP
 
-def combined_heatmap(so_pos_rates, fcc_pos_rates):
-    fig, axes = plt.subplots(1, 2, figsize=(14, 4), facecolor=PALETTE["bg"])
+def combined_heatmap(so_pos_rates, fcc_pos_rates, adult_pos_rates=None):
+    panels = [
+        (so_pos_rates,  "Stack Overflow\n(above-median salary)", "YlOrRd"),
+        (fcc_pos_rates, "FCC 2018\n(working as developer)",      "YlGnBu"),
+    ]
+    if adult_pos_rates:
+        panels.append(
+            (adult_pos_rates, "UCI Adult\n(>$50K income)", "BuGn")
+        )
+
+    fig, axes = plt.subplots(1, len(panels), figsize=(7 * len(panels), 4),
+                             facecolor=PALETTE["bg"])
+    if len(panels) == 1:
+        axes = [axes]
+    subtitle = " | ".join(
+        f"{p[1].splitlines()[0]}" for p in panels
+    )
     fig.suptitle(
-        "Intersectional Positive-Prediction Rates\n"
-        "Left: SO (Age x Experience) | Right: FCC (Gender x Experience)",
+        f"Intersectional Positive-Prediction Rates\n{subtitle}",
         fontsize=11, fontweight="bold"
     )
 
-    for ax, (pos_rates, title, cmap) in zip(
-        axes,
-        [
-            (so_pos_rates,  "Stack Overflow\n(above-median salary)", "YlOrRd"),
-            (fcc_pos_rates, "FCC 2018\n(working as developer)",      "YlGnBu"),
-        ]
-    ):
+    for ax, (pos_rates, title, cmap) in zip(axes, panels):
         if not pos_rates:
             ax.axis("off")
             continue
@@ -372,8 +466,12 @@ def combined_heatmap(so_pos_rates, fcc_pos_rates):
 if __name__ == "__main__":
     so_rates = so_intersectional()
     fcc_rates = fcc_intersectional()
+    adult_rates = adult_intersectional()
 
-    if so_rates and fcc_rates:
-        combined_heatmap(so_rates, fcc_rates)
+    available = [r for r in [so_rates, fcc_rates, adult_rates] if r]
+    if len(available) >= 2:
+        combined_heatmap(so_rates, fcc_rates, adult_rates)
+    else:
+        print("  Skipping combined heatmap -- need at least 2 datasets.")
 
     print("\n  Notebook 6 complete.")
