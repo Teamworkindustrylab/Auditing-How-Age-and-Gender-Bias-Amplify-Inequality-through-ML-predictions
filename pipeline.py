@@ -22,12 +22,14 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 
 STEPS = [
-    ("01_preprocessing.py",        "Notebook 1 -- ingestion & EDA"),
-    ("02_feature_engineering.py",  "Notebook 2 -- feature engineering"),
-    ("03_bias_amplification.py",   "Notebook 3 -- bias amplification"),
-    ("04_shap_explainability.py",  "Notebook 4 -- SHAP explainability"),
-    ("05_mitigation_compliance.py","Notebook 5 -- mitigation & compliance"),
-    ("06_intersectional_analysis.py","Notebook 6 -- intersectional analysis"),
+    ("01_preprocessing.py",            "Notebook 1 -- ingestion & EDA"),
+    ("02_feature_engineering.py",      "Notebook 2 -- feature engineering"),
+    ("03_bias_amplification.py",       "Notebook 3 -- bias amplification"),
+    ("04_shap_explainability.py",      "Notebook 4 -- SHAP explainability"),
+    ("05_mitigation_compliance.py",    "Notebook 5 -- mitigation & compliance"),
+    ("06_intersectional_analysis.py",  "Notebook 6 -- intersectional analysis"),
+    ("07_cross_dataset_synthesis.py",  "Notebook 7 -- cross-dataset synthesis"),
+    ("08_sensitivity_bootstrap.py",    "Notebook 8 -- sensitivity & bootstrap CIs"),
 ]
 
 

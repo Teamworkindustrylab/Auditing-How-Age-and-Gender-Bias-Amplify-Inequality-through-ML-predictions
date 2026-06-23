@@ -680,9 +680,15 @@ if __name__ == "__main__":
             plot_adult_sex_income(adult_raw)
         except Exception as e:
             print(f"  [ADULT] Warning: gender/income plot failed -- {e}")
-    except RuntimeError as e:
-        print(e)
-        print("  [ADULT] Skipping Adult section; install ucimlrepo and re-run.")
+    except (RuntimeError, ConnectionError, Exception) as e:
+        # fetch_ucirepo raises a plain ConnectionError when archive.ics.uci.edu
+        # isn't reachable (offline, sandboxed, or DNS-blocked). We previously
+        # only caught RuntimeError which let the ConnectionError abort NB1.
+        # Broad catch here is intentional: NB1's other branches have already
+        # written their CSVs, so an Adult failure shouldn't kill the run.
+        print(f"  [ADULT] Skipping -- {type(e).__name__}: {e}")
+        print("  [ADULT] If you want Adult, install ucimlrepo and ensure "
+              "https://archive.ics.uci.edu is reachable, then re-run NB1.")
 
     print("\n  NOTEBOOK 1 COMPLETE")
     print("   data/so_raw.csv")

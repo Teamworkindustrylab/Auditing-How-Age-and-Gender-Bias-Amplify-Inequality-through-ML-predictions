@@ -70,3 +70,30 @@ pip install -r requirements.txt
 *Data usage subject to [ODbL](https://opendatacommons.org/licenses/odbl/) (Stack Overflow Developer Survey 2024 and freeCodeCamp 2018 New Coder Survey) and [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) (UCI Adult / Census Income).*
 
 
+## Notebook 7 -- Cross-Dataset Synthesis
+
+A synthesis notebook aggregates results from all available datasets into a unified comparison. It does **not** retrain anything; it reads the per-dataset CSVs produced by NB3/NB5/NB6 and assembles them. If only a subset of datasets has been run (e.g. you can't download the SO survey from Kaggle, or `archive.ics.uci.edu` is unreachable from your network), NB7 still produces a partial comparison rather than failing.
+
+Outputs:
+
+* `outputs/final_cross_dataset_comparison.csv`
+* `outputs/nb7_amplification_comparison.png`
+* `outputs/nb7_gap_comparison.png`
+* `outputs/nb7_compliance_dashboard.png`
+* `outputs/nb7_summary.md`
+
+## Notebook 8 -- Sensitivity & Bootstrap Analysis
+
+Implements three open items from FINDINGS section 9:
+
+1. **Bootstrapped 95% confidence intervals** on DPD and amplification ratio (B=1000 resamples). Lets us say whether the FCC "under-amplification" finding is statistically distinguishable from "no amplification".
+2. **Per-dataset proxy-feature sensitivity** -- for each dataset, drop the single feature flagged in NB4 as the most likely vector for laundering the protected attribute into the model. For SO that's `years_code_pro` (age proxy via experience); for FCC that's `log_expected_earning` (aspiration plausibly downstream of gender); for Adult that's `is_married` (closest gender proxy left in the feature set after `relationship` was excluded). The output table compares full vs. dropped variants across all three datasets so the same robustness question is asked symmetrically.
+3. **Subgroup-aware reweighing** on all three datasets -- re-runs the Kamiran & Calders weights on the *intersectional* subgroup (age x experience for SO, gender x experience for FCC, gender x age-bracket for Adult) rather than the single-axis key NB5 uses. Directly tests whether each dataset's intersectional max DPD can be brought under the 0.10 compliance line.
+
+Outputs:
+
+* `outputs/nb8_bootstrap_ci.csv`, `outputs/nb8_bootstrap_forest.png`
+* `outputs/nb8_sensitivity_per_dataset.csv`, `outputs/nb8_sensitivity_chart.png`
+* `outputs/nb8_subgroup_reweigh.csv`, `outputs/nb8_subgroup_reweigh_chart.png`
+
+These two stages transform the project from a collection of individual case studies into a comparative fairness audit capable of answering the central research question: whether machine-learning models merely reflect demographic inequality or systematically amplify it across domains.
