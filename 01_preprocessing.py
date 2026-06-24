@@ -476,63 +476,142 @@ def plot_fcc_gender_paid(df: pd.DataFrame):
 # 1994 Census database (UCI id=20, the combined train+test "Census
 # Income" release -- larger than the classic 32,561-row "Adult" id=2).
 # Binary target: income >$50K/yr. Binary sensitive attribute: sex.
-# Loaded via the `ucimlrepo` package, which is the dataset's current,
-# maintained access path (pip install ucimlrepo).
+# Loaded via a chain of fallbacks so the rest of the pipeline doesn't
+# get stuck if any one source is down:
+#   1. Local cache file (data/adult_raw.csv)
+#   2. ucimlrepo package -> archive.ics.uci.edu
+#   3. sklearn fetch_openml -> openml.org
+#   4. Stable raw GitHub mirror (jbrownlee/Datasets)
+# Whichever path wins, the columns are normalised the same way and the
+# result is cached so subsequent runs skip the network entirely.
+
+# Standard 15-column Adult schema, used when the source doesn't ship headers
+_ADULT_COLS = [
+    "age", "workclass", "fnlwgt", "education", "education-num",
+    "marital-status", "occupation", "relationship", "race", "sex",
+    "capital-gain", "capital-loss", "hours-per-week",
+    "native-country", "income",
+]
+
+_ADULT_GITHUB_URL = (
+    "https://raw.githubusercontent.com/jbrownlee/Datasets/master/adult-all.csv"
+)
+
+
+def _normalise_adult(df: pd.DataFrame) -> pd.DataFrame:
+    """Flatten column names to snake_case and clean the target column.
+    The target column comes through as "income", ">50K", or "class"
+    depending on the source, and the official test split has a trailing
+    period (">50K.") which we strip here so downstream string matches
+    don't silently drop half the positive class.
+    """
+    df = df.copy()
+    df.columns = [c.strip().replace("-", "_").replace(" ", "_")
+                  for c in df.columns]
+
+    # Find the target column. Order matters: an EXACT-name match wins
+    # first (covers github / openml which ship the column named "income").
+    # If that's absent, fall back to value-based detection (look for the
+    # ">50K" / "<=50K" pattern in the last column). The earlier version
+    # of this function matched any column containing "income" OR "class"
+    # OR "50", which accidentally renamed "workclass" to "income" and
+    # produced an "income.1" duplicate for the real target.
+    if "income" in df.columns:
+        target_col = "income"
+    elif "class" in df.columns:
+        target_col = "class"
+    else:
+        # Last-column fallback: scan for >50K / <=50K markers
+        last = df.columns[-1]
+        sample = df[last].astype(str).str.strip().str.rstrip(".")
+        if sample.isin(["<=50K", ">50K"]).any():
+            target_col = last
+        else:
+            target_col = last  # accept it, but warn
+            print(f"  [ADULT] Warning: couldn't confidently identify target "
+                  f"column; using last column '{last}'.")
+
+    df[target_col] = df[target_col].astype(str).str.strip().str.rstrip(".")
+    if target_col != "income":
+        df = df.rename(columns={target_col: "income"})
+    return df
+
+
+def _try_load_adult_ucimlrepo() -> pd.DataFrame | None:
+    try:
+        from ucimlrepo import fetch_ucirepo
+    except ImportError:
+        print("  [ADULT] ucimlrepo not installed -- skipping that path.")
+        return None
+    print("  [ADULT] Trying ucimlrepo (id=20) ...")
+    try:
+        census_income = fetch_ucirepo(id=20)
+        df = pd.concat(
+            [census_income.data.features, census_income.data.targets], axis=1
+        )
+        return df
+    except Exception as e:
+        print(f"  [ADULT] ucimlrepo path failed ({type(e).__name__}).")
+        return None
+
+
+def _try_load_adult_openml() -> pd.DataFrame | None:
+    try:
+        from sklearn.datasets import fetch_openml
+    except ImportError:
+        return None
+    print("  [ADULT] Trying sklearn fetch_openml('adult') ...")
+    try:
+        bundle = fetch_openml(name="adult", version=2, as_frame=True,
+                               parser="auto")
+        df = pd.concat([bundle.data, bundle.target.rename("income")], axis=1)
+        return df
+    except Exception as e:
+        print(f"  [ADULT] openml path failed ({type(e).__name__}).")
+        return None
+
+
+def _try_load_adult_github() -> pd.DataFrame | None:
+    print(f"  [ADULT] Trying GitHub mirror ({_ADULT_GITHUB_URL}) ...")
+    try:
+        df = pd.read_csv(_ADULT_GITHUB_URL, header=None, names=_ADULT_COLS,
+                         low_memory=False, na_values="?",
+                         skipinitialspace=True)
+        return df
+    except Exception as e:
+        print(f"  [ADULT] github path failed ({type(e).__name__}).")
+        return None
+
 
 def load_adult() -> pd.DataFrame:
-    """
-    Load UCI Adult / Census Income, caching to data/adult_raw.csv so
-    subsequent runs don't re-fetch.
-    """
+    """Load UCI Adult / Census Income with multi-source fallback. Caches
+    the result to data/adult_raw.csv so subsequent runs skip the network."""
     if os.path.exists(ADULT_PATH):
         print(f"\n[ADULT] Loading from cache: {ADULT_PATH}")
         return pd.read_csv(ADULT_PATH, low_memory=False)
 
-    try:
-        from ucimlrepo import fetch_ucirepo
-    except ImportError:
-        raise RuntimeError(
-            "[ADULT] ucimlrepo not installed.\n"
-            "  Run: pip install ucimlrepo\n"
-            "  Or manually download from "
-            "https://archive.ics.uci.edu/dataset/20/census+income\n"
-            f"  and place the combined CSV at {ADULT_PATH}"
-        )
+    print("\n[ADULT] No cache found; trying remote sources ...")
+    for attempt in (_try_load_adult_ucimlrepo,
+                    _try_load_adult_openml,
+                    _try_load_adult_github):
+        df = attempt()
+        if df is not None and len(df) > 0:
+            df = _normalise_adult(df)
+            os.makedirs("data", exist_ok=True)
+            df.to_csv(ADULT_PATH, index=False)
+            print(f"[ADULT] Cached -> {ADULT_PATH}  "
+                  f"({len(df):,} rows, {df.shape[1]} columns)")
+            return df
 
-    print("[ADULT] Fetching via ucimlrepo (id=20, Census Income, "
-          "48,842 rows) ...")
-    census_income = fetch_ucirepo(id=20)
-    df = pd.concat(
-        [census_income.data.features, census_income.data.targets], axis=1
+    raise RuntimeError(
+        "[ADULT] All load paths failed. Options:\n"
+        "  (a) pip install ucimlrepo  and re-run NB1\n"
+        "  (b) confirm network access to openml.org or "
+        "raw.githubusercontent.com\n"
+        "  (c) manually download adult.data + adult.test from "
+        "https://archive.ics.uci.edu/dataset/20/census+income\n"
+        f"      and place the combined CSV at {ADULT_PATH}"
     )
-
-    # Normalise column names: ucimlrepo preserves the original hyphenated
-    # UCI names ("education-num", "marital-status", ...). Hyphens still
-    # work with bracket indexing but break anything that tries dot access
-    # or simple string ops downstream, so we flatten to snake_case once,
-    # here, rather than re-deriving it in every later notebook.
-    df.columns = [c.strip().replace("-", "_").replace(" ", "_")
-                  for c in df.columns]
-
-    # Known dataset quirk: the official train file (adult.data) encodes
-    # the target as "<=50K"/">50K", while the official test file
-    # (adult.test) encodes it as "<=50K."/">50K." -- trailing period.
-    # ucimlrepo's combined release inherits this inconsistency. Strip it
-    # once here so a later `== ">50K"` string match doesn't silently
-    # drop half the positive class.
-    target_col = [c for c in df.columns if "income" in c.lower()
-                  or "50" in c.lower()]
-    target_col = target_col[0] if target_col else df.columns[-1]
-    df[target_col] = (
-        df[target_col].astype(str).str.strip().str.rstrip(".")
-    )
-    df = df.rename(columns={target_col: "income"})
-
-    os.makedirs("data", exist_ok=True)
-    df.to_csv(ADULT_PATH, index=False)
-    print(f"[ADULT] Cached -> {ADULT_PATH}  "
-          f"({len(df):,} rows, {df.shape[1]} columns)")
-    return df
 
 
 def eda_adult(df: pd.DataFrame) -> pd.DataFrame:

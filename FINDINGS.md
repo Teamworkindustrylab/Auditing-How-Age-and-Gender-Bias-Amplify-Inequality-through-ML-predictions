@@ -164,11 +164,32 @@ Our SO XGBoost model fails the |DPD| ≤ 0.10 threshold under all three sensitiv
 
 ---
 
-## 7. UCI Adult / Census Income — integrated, not yet executed
+## 7. Result: UCI Adult / Census Income
 
-A third dataset, UCI Adult / Census Income (48,842 rows, binary income target `above_50k`, binary `gender_clean`), has been added to all six notebooks: loader and EDA in NB1, `AdultFeatureEngineering` in NB2, `AdultBiasAmplification` in NB3, SHAP support in NB4, `AdultMitigation` in NB5, and `adult_intersectional()` in NB6. All six files compile cleanly.
+A third dataset, UCI Adult / Census Income (48,842 rows, binary income target `above_50k`, binary `gender_clean`), is fully integrated across NB1–NB8. NB1's `load_adult()` now uses a multi-source fallback (local cache → `ucimlrepo` → `sklearn.fetch_openml` → GitHub mirror), so the dataset loads even when `archive.ics.uci.edu` is unreachable.
 
-**No results are reported here yet** — the pipeline has not been run end-to-end against live Adult data in this environment (no network access to `archive.ics.uci.edu` from this sandbox). For context, the dataset's own published documentation reports a raw gap of 30% of men vs. 11% of women earning above $50K — a larger raw gap than FCC's, and one that should comfortably exceed the |DPD| ≤ 0.10 threshold before mitigation, similar in spirit to SO's age results. This is a documented fact about the source data, **not** a number this project has yet reproduced through its own pipeline; treat it as a prior, not a result, until §7 has its own `adult_bias_results.csv`, SHAP table, mitigation table, and intersectional table like §1–§5 above.
+### Single-axis (gender)
+
+- **Raw data DPD: 0.195.** In the dataset, 30.4% of men earn above $50K vs 10.9% of women.
+- **XGBoost DPD: 0.098.** Just under the 0.10 compliance line. Amplification ratio is 0.50× — the model compresses the gender gap rather than amplifying it. Bootstrap 95% CI on amplification: [0.44×, 0.56×], strictly under 1.0.
+- **Logistic Regression DPD: 0.107.** Slightly above the line on baseline, ratio 0.55×.
+- **Mitigation:** reweighing brings XGB DPD to 0.091, threshold calibration to 0.003. Both PASS.
+
+### Intersectional (gender × age-bracket)
+
+- **Max intersectional DPD: 0.174**, between `man_senior` (highest positive-prediction rate) and `woman_junior` (lowest). FAILS the 0.10 line.
+- Compounding gap: 0.174 − 0.098 = +0.08 absolute. Smaller than FCC's +0.73 but still meaningful.
+- **Subgroup-aware reweighing** (NB8 §9.3) takes intersectional DPD from 0.174 to 0.161, AUC 0.864 → 0.859. The technique that closes FCC's gap doesn't move much here. Adult's intersectional gap was already small, so there isn't much to redistribute.
+
+### What Adult adds to the cross-dataset story
+
+Adult sits between FCC and SO on raw bias (0.19 vs 0.07 and 0.31) but behaves more like FCC than SO at the model level. It compresses the gap rather than amplifies. The intersectional pattern is consistent with the headline finding — single-axis compliance, subgroup non-compliance — though less dramatically than on FCC (0.17 vs 0.78). Cross-dataset summary:
+
+| Dataset | Raw DPD | XGB DPD | Amplifies? | Intersectional max | Reweighing fix |
+|---|---|---|---|---|---|
+| FCC | 0.07 | 0.05 | No (0.73×) | 0.78 | Works (0.78 → 0.06) |
+| Adult | 0.19 | 0.10 | No (0.50×) | 0.17 | Barely moves (0.17 → 0.16) |
+| Stack Overflow | 0.31 | 0.56 | Yes (1.85×) | 0.98 | Helps but still fails (0.98 → 0.36) |
 
 A fourth candidate, OPM FedScope, was evaluated and rejected: its public release is aggregated count-cube data (age and salary in 5-year/$10K bands, cells under 12 employees suppressed), not row-level microdata, and is structurally incompatible with this pipeline's per-instance classifiers and SHAP analysis.
 
@@ -242,12 +263,12 @@ The Adult row will populate once `archive.ics.uci.edu` is reachable from the run
 
 | Finding | SO | FCC | Adult |
 |---------|----|----|-------|
-| Pre-existing data bias | High (DPD 0.31) | Moderate (DPD 0.07) | Pending — documented raw gap ~0.19 |
-| Model amplification | **Severe** (ratio 1.6–2.1) | None (ratio 0.4–0.75, CI [0.51×, 0.96×]) | Pending |
-| Dominant proxy features | Years of experience | Expected earning, months programming | Pending |
-| Mitigation achieves single-axis compliance | Only threshold calibration | All strategies | Pending |
-| Intersectional max DPD | Age × Experience | Gender × Experience — **0.785** (the project headline) | Pending |
-| Subgroup-aware reweighing closes intersectional gap | Not yet evaluated | **YES** — 0.785 → 0.065, AUC 0.934 → 0.902 | Pending |
+| Pre-existing data bias | High (DPD 0.31) | Low (DPD 0.07) | Moderate (DPD 0.19) |
+| Model amplification | **Severe** (ratio 1.85×, CI [1.79×, 1.92×]) | None (ratio 0.73×, CI [0.51×, 0.95×]) | None (ratio 0.50×, CI [0.44×, 0.56×]) |
+| Dominant proxy features | Years of experience | Expected earning, months programming | is_married, hours worked, education |
+| Mitigation achieves single-axis compliance | Only threshold calibration | All strategies | All strategies (baseline already at 0.098) |
+| Intersectional max DPD | **0.98** (age × experience) | **0.78** (gender × experience) | 0.17 (gender × age) |
+| Subgroup-aware reweighing closes intersectional gap | Helps (0.98 → 0.36) but still fails the line | **YES** — 0.78 → 0.06, AUC 0.934 → 0.902 | Barely moves (0.17 → 0.16) |
 
 **Status of next-step items** (carried over from earlier drafts):
 
@@ -257,6 +278,6 @@ The Adult row will populate once `archive.ics.uci.edu` is reachable from the run
 | 2. Sensitivity analysis dropping `log_expected_earning` from FCC | **DONE** — NB8 §7b shows the under-amplification verdict survives (amplification 0.59×, CI [0.40×, 0.78×]) |
 | 3. Re-run reweighing over FCC's intersectional subgroups, not just the gender-only key | **DONE** — NB8 §7b shows intersectional DPD drops from 0.785 to 0.065 at the cost of 0.03 AUC |
 | 4. Bootstrapped 95% CIs on DPD and amplification | **DONE** — NB8 §7b; FCC amplification CI [0.512×, 0.955×] excludes 1.0 |
-| 5. Execute the Adult Income branch end-to-end and populate §7 | **CODE READY**, requires `archive.ics.uci.edu` access to fetch; pipeline will run cleanly once data is reachable from your environment |
+| 5. Execute the Adult Income branch end-to-end and populate §7 | **DONE** — Adult ran via the multi-source loader. Real numbers populated in §7 above. Compresses gender gap (amplification 0.50×), single-axis compliant, intersectional gap of 0.17 still fails the line. |
 | 6. Would including age directly as a feature reduce or increase amplification? | Open — proposed extension, not yet implemented |
 | 7. Does the intersectional gap vary across different salary/income quantile thresholds? | Open — proposed extension, not yet implemented |
