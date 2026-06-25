@@ -8,11 +8,11 @@ Datasets:
   Dataset 1: Stack Overflow Developer Survey 2024
   Dataset 2: freeCodeCamp New Coder Survey 2018  (REPLACEMENT FOR GH OSS 2017)
 
-  NOTE: Dataset 2 change-log  (week of 2026-06-09)
+  NOTE: Dataset 2 change-log  (week of 2026-06-25)
 
   The GitHub Open Source Survey 2017 was replaced because its gender
   distribution was 97 % men / 3 % women, far too skewed to support a
-  meaningful audit of gender-conditional outcomes: with ~150 women in
+  meaningful audit of gender-based outcomes: with ~150 women in
   the test split, every DPD estimate carried huge variance and any
   "mitigation" result was statistical noise.
 
@@ -27,14 +27,14 @@ Datasets:
       ~1,300 women in the test split and makes every group-conditional
       statistic reliable.
     - Includes age, so we can also evaluate gender x age intersectional
-      analysis on dataset 2 (which the GH OSS dataset could not support).
+      analysis on dataset 2 if needed (which the GH OSS dataset could not support).
     - Open Database License (ODbL) -- same licence as Stack Overflow.
 
 
 The notebook is organized as follows:
   - Path constants
   - reweigh_samples()
-  - StackOverflowPipeline        (unchanged)
+  - StackOverflowPipeline        
   - FCCSurveyPipeline            (replaces GitHubOSSSurveyPipeline)
 
 
@@ -93,7 +93,7 @@ os.makedirs(OUT_DIR, exist_ok=True)
 # PALETTE imported from config.py
 
 
-# SECTION 1 -- STACK OVERFLOW 2024  (UNCHANGED FROM PREVIOUS VERSION)
+# SECTION 1 -- STACK OVERFLOW 2024  
 
 # 1.1  Parsing raw CSV
 """
@@ -233,7 +233,6 @@ def eda_so(df: pd.DataFrame) -> pd.DataFrame:
 # 1.3 SO plots for age/salary, DevType, and years of coding experience.
 
 # Age classification is provided by config.classify_age (shared with NB2).
-# The local alias below keeps the rest of this file unchanged.
 _classify_age = classify_age
 
 
@@ -317,7 +316,7 @@ def plot_so_years(df: pd.DataFrame):
     print(f"[SO]   Saved -> {out}")
 
 
-# SECTION 2 -- freeCodeCamp NEW CODER SURVEY 2018 
+# SECTION 2 -- freeCodeCamp CODER SURVEY 2018 
 # -----------------------------------------------------------------------
 # Loaded from the official freeCodeCamp GitHub repository as a single
 # CSV. 31,226 respondents, 136 columns, Open Database License (ODbL).
@@ -458,7 +457,7 @@ def plot_fcc_gender_paid(df: pd.DataFrame):
     print(f"[FCC]   Saved -> {out}")
 
 
-# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# SECTION 3 -- UCI ADULT / CENSUS INCOME 
 # -----------------------------------------------------------------------
 # 48,842 respondents, 14 attributes, donated by Barry Becker from the
 # 1994 Census database (UCI id=20, the combined train+test "Census
@@ -500,10 +499,7 @@ def _normalise_adult(df: pd.DataFrame) -> pd.DataFrame:
     # Find the target column. Order matters: an EXACT-name match wins
     # first (covers github / openml which ship the column named "income").
     # If that's absent, fall back to value-based detection (look for the
-    # ">50K" / "<=50K" pattern in the last column). The earlier version
-    # of this function matched any column containing "income" OR "class"
-    # OR "50", which accidentally renamed "workclass" to "income" and
-    # produced an "income.1" duplicate for the real target.
+    # ">50K" / "<=50K" pattern in the last column). 
     if "income" in df.columns:
         target_col = "income"
     elif "class" in df.columns:
@@ -749,8 +745,7 @@ if __name__ == "__main__":
             print(f"  [ADULT] Warning: gender/income plot failed -- {e}")
     except (RuntimeError, ConnectionError, Exception) as e:
         # fetch_ucirepo raises a plain ConnectionError when archive.ics.uci.edu
-        # isn't reachable (offline, sandboxed, or DNS-blocked). We previously
-        # only caught RuntimeError which let the ConnectionError abort NB1.
+        # isn't reachable (offline, sandboxed, or DNS-blocked). 
         # Broad catch here is intentional: NB1's other branches have already
         # written their CSVs, so an Adult failure shouldn't kill the run.
         print(f"  [ADULT] Skipping -- {type(e).__name__}: {e}")

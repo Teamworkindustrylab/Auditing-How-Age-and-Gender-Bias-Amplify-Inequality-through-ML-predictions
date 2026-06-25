@@ -24,18 +24,10 @@
   This notebook does NOT re-train anything; it READS those CSVs and
   assembles a single comparative view across all available datasets.
 
-  README.md and Presentation.ipynb both reference this notebook's
-  outputs, but the script itself was missing in the original tree -- so
-  the cross-dataset comparison in the writeup had no generating code.
-  This file fills that gap.
-
   Design choice: gracefully handles any subset of the three datasets.
   If you only have FCC results (e.g. you can't run SO without the Kaggle
   download, or Adult is unreachable from your network), NB7 will still
-  produce a 1-dataset comparison rather than crashing. The pipeline is
-  resilient because the prof's "did we cross 10% DPD" question can be
-  answered as soon as ANY high-bias dataset (Adult) has been run, even
-  if the other two haven't yet.
+  produce a 1-dataset comparison rather than crashing.
 """
 
 from __future__ import annotations

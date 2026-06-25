@@ -22,7 +22,7 @@
   FCC:
     gender_clean        -- binary: man vs woman   (primary)
     age_group           -- binary: young (<35) vs experienced (35+)   (kept
-                           for optional intersectional extension in NB6)
+                           for intersectional extension in NB6)
 
   Targets
   SO  : above_median_salary (binary)
@@ -74,11 +74,10 @@ TOP_DEVTYPES = [
 # SHARED UTILITY
 
 # _classify_age is imported from config.py (single canonical implementation).
-# The alias below keeps the rest of this file unchanged.
 _classify_age = classify_age
 
 
-# SECTION 1 -- STACK OVERFLOW 2024  (UNCHANGED)
+# SECTION 1 -- STACK OVERFLOW 2024  
 
 class SOFeatureEngineering:
 
@@ -229,7 +228,7 @@ class SOFeatureEngineering:
         return self
 
 
-# SECTION 2 -- freeCodeCamp 2018 NEW CODER SURVEY (REPLACES GH OSS 2017)
+# SECTION 2 -- freeCodeCamp 2018 NEW CODER SURVEY
 # ----------------------------------------------------------------------
 # Engineered feature set is intentionally similar in spirit to the
 # previous GH OSS feature set, but uses fields that FCC actually
@@ -276,8 +275,7 @@ class FCCFeatureEngineering:
 
     # Learning-resource columns: every FCC binary column that names a
     # specific learning resource. We count them to build the
-    # "num_learning_resources" feature, an analog of the OSS-help-
-    # seeking ordinal in the previous dataset.
+    # "num_learning_resources" feature.
     
     LEARNING_RESOURCE_COLS = [
         "freeCodeCamp", "Coursera", "edX", "Khan Academy", "Udacity",
@@ -598,7 +596,7 @@ class AdultFeatureEngineering:
             df["native_country"].astype(str).str.strip() == "United-States"
         ).astype(int)
 
-        # Occupation dummies (parallel to SO's devtype_ dummies)
+        # Occupation dummies 
         occ = df["occupation"].fillna("").astype(str)
         occ_cols = []
         for role in self.TOP_OCCUPATIONS:
@@ -715,14 +713,14 @@ if __name__ == "__main__":
     print("  NOTEBOOK 2 -- FEATURE ENGINEERING & PREPROCESSING")
     print("=" * 65)
 
-    # Stack Overflow (unchanged)
+    # Stack Overflow 
     if os.path.exists(IN_SO):
         so_fe = SOFeatureEngineering().load().engineer()
         so_fe.save()
     else:
         print(f"[SO FE] {IN_SO} not found -- skipping SO section.")
 
-    # FCC (replaces GH OSS)
+    # FCC 
     fcc_fe = FCCFeatureEngineering().load().engineer()
     fcc_fe.save()
     try:
@@ -731,7 +729,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[FCC FE] Warning: plot failed -- {e}")
 
-    # UCI Adult / Census Income (new)
+    # UCI Adult / Census Income 
     if os.path.exists(IN_ADULT):
         adult_fe = AdultFeatureEngineering().load().engineer()
         adult_fe.save()

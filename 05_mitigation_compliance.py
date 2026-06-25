@@ -23,7 +23,7 @@
      prediction rate to the global rate. No retraining needed.
 
   Compliance threshold : |DPD| <= 0.10  (consistent across NB3/NB5/NB6,
-                                           grounded in EEOC's 80% rule)
+                                           grounded in AI Fairness 360, 2018 rule)
 """
 
 import os
@@ -82,14 +82,6 @@ def threshold_calibrate(model, X_te: pd.DataFrame,
     """
     Per-group threshold search that equalises positive-prediction rate
     to the GLOBAL POSITIVE LABEL RATE in the test set.
-
-    FIX (was: used (y_prob >= 0.5).mean() as the calibration target,
-    which is the predicted-positive rate at the default threshold, not
-    the true positive rate.  For imbalanced datasets like Adult -- where
-    ~24% of rows are labelled positive but ~30%+ may be predicted
-    positive at 0.5 -- this pushed every group's threshold in the wrong
-    direction.  Using y_te.mean() as the target correctly anchors
-    calibration to the observed label prevalence):
 
     If y_te is not supplied the function falls back to the old behaviour
     (predicted rate at 0.5) for backward compatibility in call sites
@@ -292,7 +284,7 @@ class FCCMitigation:
         return self.tradeoff
 
 
-# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# SECTION 3 -- UCI ADULT / CENSUS INCOME 
 
 class AdultMitigation:
 

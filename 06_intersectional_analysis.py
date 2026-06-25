@@ -27,7 +27,7 @@
     between this max and the worst single-attribute DPD from NB3 --
     a positive value indicates compounding harm.
 
-  Compliance threshold : |DPD| <= 0.10  (consistent with NB3/NB5)
+  Compliance threshold : |DPD| <= 0.10  (consistent with NB3/NB5 and AI Fairness 360 rule)
 
   Inputs  : data/preprocessed/so_preprocessed.csv
             data/preprocessed/fcc_preprocessed.csv
@@ -76,8 +76,8 @@ os.makedirs(OUT, exist_ok=True)
 
 
 # Reference single-attribute DPDs are READ from NB3's results files
-# instead of hard-coded -- previously this was a brittle constant
-# that drifted out of sync whenever NB3 was re-run.
+# instead of hard-coded -- otherwise it can
+# drift out of sync whenever NB3 is re-run.
 
 def _ref_so_dpd() -> float:
     p = os.path.join(OUT, "so_bias_results.csv")
@@ -165,10 +165,6 @@ def bar_chart(pos_rates, max_dpd, title, dataset_color, out_path,
               highlight_fn=None):
     """
     Horizontal bar chart of positive-prediction rates by subgroup.
-
-    FIX (was: hardcoded 'young' and 'woman' as the only highlighted
-    terms, which coloured SO's 'experienced' bars and Adult's
-    'junior'/'mid'/'senior' bars in the wrong colour):
 
     highlight_fn is now a callable that takes a subgroup label string
     and returns True if that subgroup should use dataset_color (the
@@ -343,7 +339,7 @@ def fcc_intersectional():
     return fcc_pos_rates
 
 
-# UCI ADULT  --  gender x age_bracket (NEW)
+# UCI ADULT  --  gender x age_bracket 
 # Uses gender_age_bracket straight from the preprocessed CSV -- it was
 # already built in NB2 (AdultFeatureEngineering.engineer()), the same
 # pattern SO uses for age_exp_pro, rather than FCC's pattern of

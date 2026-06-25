@@ -101,8 +101,7 @@ def run_shap(model, X: pd.DataFrame) -> tuple[pd.Series, np.ndarray]:
     if hasattr(model, "named_steps"):
         # Pipeline: extract the final classifier and transform X through
         # all preceding steps using sklearn's slice syntax (avoids the
-        # manual step-by-step reconstruction that previously broke on
-        # StandardScaler's numpy output).
+        # manual step-by-step reconstruction).
         clf = model[-1]
         X_t = pd.DataFrame(
             model[:-1].transform(X),
@@ -221,7 +220,7 @@ def fcc_shap_analysis() -> pd.Series:
     return importance
 
 
-# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# SECTION 3 -- UCI ADULT / CENSUS INCOME 
 
 def adult_shap_analysis() -> pd.Series:
     print("\n" + "=" * 60)

@@ -626,12 +626,8 @@ def run_subgroup_reweigh_so() -> dict | None:
 
     # Single-axis DPD: recover the age axis by stripping the experience
     # suffix (e.g. 'experienced_senior' -> 'experienced').
-    # FIX (was: checked for 'older' which is not a label produced by
-    # config.classify_age; the fallback then binarised by comparing
-    # against the first unique value, whose order is non-deterministic
-    # and could flip the DPD sign):
     # classify_age() always returns 'young' or 'experienced', so we
-    # check for 'experienced' directly and never fall through to the
+    # check for 'experienced' directly and never fall through to an
     # unreliable fallback.
     age_te = g_te.str.split("_").str[0]
     age_bin = (age_te == "experienced").astype(int)

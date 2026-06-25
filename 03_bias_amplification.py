@@ -120,7 +120,7 @@ def measure_bias_multigroup(y_true, y_pred, g_series) -> dict:
     return dict(group_rates=group_rates, max_gap=max_gap, dpd=dpd, eod=eod)
 
 
-# SECTION 1 -- STACK OVERFLOW 2024 (UNCHANGED)
+# SECTION 1 -- STACK OVERFLOW 2024 
 
 class SOBiasAmplification:
 
@@ -234,7 +234,7 @@ class SOBiasAmplification:
         return amp_results
 
 
-# SECTION 2 -- freeCodeCamp 2018 (REPLACES GH OSS 2017)
+# SECTION 2 -- freeCodeCamp 2018 
 
 class FCCBiasAmplification:
 
@@ -321,7 +321,7 @@ class FCCBiasAmplification:
         return results
 
 
-# SECTION 3 -- UCI ADULT / CENSUS INCOME (NEW)
+# SECTION 3 -- UCI ADULT / CENSUS INCOME 
 # ----------------------------------------------------------------------
 # Structurally mirrors FCCBiasAmplification: single binary sensitive
 # attribute (gender_clean), fairlearn DPD/EOD directly (no multi-group
@@ -530,7 +530,7 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"  Warning: comparison chart failed -- {e}")
 
-    # UCI Adult / Census Income (new)
+    # UCI Adult / Census Income 
     if os.path.exists(IN_ADULT):
         adult = AdultBiasAmplification().load()
         adult.data_baseline()
