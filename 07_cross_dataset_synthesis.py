@@ -47,23 +47,15 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from config import DPD_THRESHOLD, PALETTE
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
 OUT = "outputs"
 os.makedirs(OUT, exist_ok=True)
 
-PALETTE = {
-    "so":    "#f48024",
-    "fcc":   "#0a0a23",
-    "adult": "#2e7d32",
-    "ok":    "#27ae60",
-    "bad":   "#e74c3c",
-    "warn":  "#f39c12",
-    "bg":    "#fafafa",
-}
-
-DPD_THRESHOLD = 0.10
+# DPD_THRESHOLD and PALETTE imported from config.py.
 PRIMARY_MODEL = "XGBoost"  # which model row to use as "the" headline result
 
 DATASETS = [

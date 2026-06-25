@@ -75,6 +75,8 @@ import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import seaborn as sns
 
+from config import PALETTE, classify_age   # shared constants & age classifier
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -88,12 +90,7 @@ ADULT_PATH = "data/adult_raw.csv"
 OUT_DIR    = "data/raw_eda"
 os.makedirs(OUT_DIR, exist_ok=True)
 
-PALETTE = {
-    "so":    "#f48024",
-    "fcc":   "#0a0a23",   # freeCodeCamp brand navy
-    "adult": "#2e7d32",   # UCI Adult / Census Income
-    "bg":    "#fafafa",
-}
+# PALETTE imported from config.py
 
 
 # SECTION 1 -- STACK OVERFLOW 2024  (UNCHANGED FROM PREVIOUS VERSION)
@@ -235,18 +232,9 @@ def eda_so(df: pd.DataFrame) -> pd.DataFrame:
 
 # 1.3 SO plots for age/salary, DevType, and years of coding experience.
 
-def _classify_age(age_val: str) -> str:
-    import re
-    s = str(age_val).strip().lower()
-    if not s or s in ("nan", "na", ""):
-        return "experienced (35+)"
-    if "under 18" in s or "< 18" in s:
-        return "young (< 35)"
-    nums = [int(x) for x in re.findall(r"\d+", s)]
-    if not nums:
-        return "experienced (35+)"
-    upper = max(nums)
-    return "young (< 35)" if upper <= 34 else "experienced (35+)"
+# Age classification is provided by config.classify_age (shared with NB2).
+# The local alias below keeps the rest of this file unchanged.
+_classify_age = classify_age
 
 
 def plot_so_salary_by_age(df: pd.DataFrame):
@@ -260,8 +248,8 @@ def plot_so_salary_by_age(df: pd.DataFrame):
                       (plot_df["salary"] <= plot_df["salary"].quantile(.99))]
 
     fig, ax = plt.subplots(figsize=(10, 6), facecolor=PALETTE["bg"])
-    for grp, color in [("young (< 35)", PALETTE["so"]),
-                       ("experienced (35+)", "#1a5276")]:
+    for grp, color in [("young", PALETTE["so"]),
+                       ("experienced", "#1a5276")]:
         sub = plot_df[plot_df["age_group"] == grp]["salary"]
         if len(sub):
             ax.hist(sub, bins=40, color=color, alpha=0.6, label=f"{grp} (n={len(sub):,})")

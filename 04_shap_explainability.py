@@ -39,6 +39,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import shap
 
+from config import (
+    SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES,
+    PALETTE,
+)
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -50,29 +55,8 @@ OUT     = "outputs"
 
 os.makedirs(OUT, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32", "bg": "#fafafa"}
-
-SO_BASE_FEATURES = [
-    "ed_level_enc", "is_employed", "is_remote", "is_student",
-    "years_code", "years_code_pro",
-]
-FCC_FEATURE_COLS = [
-    "months_programming",
-    "hours_learning_per_week",
-    "num_learning_resources",
-    "attended_bootcamp",
-    "is_under_employed",
-    "is_ethnic_minority",
-    "has_degree",
-    "is_high_income_country",
-    "log_expected_earning",
-]
-ADULT_BASE_FEATURES = [
-    "education_num", "hours_per_week",
-    "log_capital_gain", "log_capital_loss",
-    "is_married", "is_government_employee", "is_self_employed",
-    "is_us",
-]
+# SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES, and PALETTE
+# are all imported from config.py.
 
 
 # HELPERS
@@ -104,13 +88,27 @@ def _get_adult_features(df: pd.DataFrame) -> list:
 
 
 def run_shap(model, X: pd.DataFrame) -> tuple[pd.Series, np.ndarray]:
+    """
+    Compute SHAP values for an XGBoost model, handling both plain
+    XGBClassifier and sklearn Pipeline wrappers.
+
+    FIX (was: manually re-applied each pipeline step with incorrect
+    pd.DataFrame reconstruction that broke on StandardScaler output):
+    We now use model[:-1].transform(X) which correctly traverses all
+    pre-processing steps via sklearn's built-in Pipeline slice syntax,
+    preserving column alignment before passing to TreeExplainer.
+    """
     if hasattr(model, "named_steps"):
-        clf = model.named_steps["clf"]
-        steps = list(model.named_steps.items())[:-1]
-        X_t = X.copy()
-        for _, step in steps:
-            X_t = pd.DataFrame(step.transform(X_t), columns=X.columns,
-                                index=X.index)
+        # Pipeline: extract the final classifier and transform X through
+        # all preceding steps using sklearn's slice syntax (avoids the
+        # manual step-by-step reconstruction that previously broke on
+        # StandardScaler's numpy output).
+        clf = model[-1]
+        X_t = pd.DataFrame(
+            model[:-1].transform(X),
+            columns=X.columns,
+            index=X.index,
+        )
     else:
         clf = model
         X_t = X

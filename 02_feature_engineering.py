@@ -39,6 +39,11 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+from config import (
+    SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES,
+    SENSITIVE_DEFS, DPD_THRESHOLD, PALETTE, classify_age,
+)
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -50,7 +55,7 @@ PLOTS    = "data/raw_eda"
 os.makedirs(OUT,   exist_ok=True)
 os.makedirs(PLOTS, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32", "bg": "#fafafa"}
+# PALETTE, feature lists, and classify_age imported from config.py
 
 TOP_DEVTYPES = [
     "Developer, full-stack",
@@ -68,28 +73,9 @@ TOP_DEVTYPES = [
 
 # SHARED UTILITY
 
-def _classify_age(age_val) -> str:
-    """
-    Fuzzy age classifier -- handles both SO ordinal age bands and
-    FCC numeric ages. Thresholds at 35 -> 'young' vs 'experienced'.
-    """
-    s = str(age_val).strip().lower()
-    if not s or s in ("nan", "na", ""):
-        return "experienced"
-    if "under 18" in s or "< 18" in s:
-        return "young"
-    # Try numeric (FCC has numeric ages e.g. "27")
-    try:
-        n = float(s)
-        # Filter out obvious data-entry errors (e.g. age=250)
-        if 5 <= n <= 100:
-            return "young" if n < 35 else "experienced"
-    except ValueError:
-        pass
-    nums = [int(x) for x in re.findall(r"\d+", s)]
-    if not nums:
-        return "experienced"
-    return "young" if max(nums) <= 34 else "experienced"
+# _classify_age is imported from config.py (single canonical implementation).
+# The alias below keeps the rest of this file unchanged.
+_classify_age = classify_age
 
 
 # SECTION 1 -- STACK OVERFLOW 2024  (UNCHANGED)

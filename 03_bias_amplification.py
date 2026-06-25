@@ -47,6 +47,11 @@ from fairlearn.metrics       import (
     equalized_odds_difference,
 )
 
+from config import (
+    SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES,
+    SENSITIVE_DEFS, DPD_THRESHOLD, PALETTE,
+)
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -58,41 +63,8 @@ MDL_DIR = "outputs/models"
 os.makedirs(OUT,     exist_ok=True)
 os.makedirs(MDL_DIR, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32",
-           "ok": "#27ae60", "bad": "#e74c3c", "bg": "#fafafa"}
-
-SO_BASE_FEATURES = [
-    "ed_level_enc", "is_employed", "is_remote", "is_student",
-    "years_code", "years_code_pro",
-]
-
-# NEW FCC feature set (replaces previous GH_FEATURE_COLS)
-FCC_FEATURE_COLS = [
-    "months_programming",
-    "hours_learning_per_week",
-    "num_learning_resources",
-    "attended_bootcamp",
-    "is_under_employed",
-    "is_ethnic_minority",
-    "has_degree",
-    "is_high_income_country",
-    "log_expected_earning",
-]
-
-# UCI Adult / Census Income feature set (deliberately excludes
-# `relationship` and `fnlwgt` -- see NB2 docstring for why)
-ADULT_BASE_FEATURES = [
-    "education_num", "hours_per_week",
-    "log_capital_gain", "log_capital_loss",
-    "is_married", "is_government_employee", "is_self_employed",
-    "is_us",
-]
-
-SENSITIVE_DEFS = {
-    "S1_age_group":     "age_group",
-    "S2_age_exp_pro":   "age_exp_pro",
-    "S3_age_exp_total": "age_exp_total",
-}
+# SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES, SENSITIVE_DEFS,
+# DPD_THRESHOLD, and PALETTE are all imported from config.py.
 
 
 # SHARED HELPERS

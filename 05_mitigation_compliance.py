@@ -40,6 +40,11 @@ from sklearn.metrics         import roc_auc_score
 from xgboost                 import XGBClassifier
 from fairlearn.metrics       import demographic_parity_difference
 
+from config import (
+    SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES,
+    SENSITIVE_DEFS, DPD_THRESHOLD, PALETTE,
+)
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -53,33 +58,8 @@ os.makedirs(OUT, exist_ok=True)
 PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32",
            "ok": "#27ae60", "bad": "#e74c3c", "bg": "#fafafa"}
 
-SO_BASE_FEATURES = [
-    "ed_level_enc", "is_employed", "is_remote", "is_student",
-    "years_code", "years_code_pro",
-]
-FCC_FEATURE_COLS = [
-    "months_programming",
-    "hours_learning_per_week",
-    "num_learning_resources",
-    "attended_bootcamp",
-    "is_under_employed",
-    "is_ethnic_minority",
-    "has_degree",
-    "is_high_income_country",
-    "log_expected_earning",
-]
-ADULT_BASE_FEATURES = [
-    "education_num", "hours_per_week",
-    "log_capital_gain", "log_capital_loss",
-    "is_married", "is_government_employee", "is_self_employed",
-    "is_us",
-]
-SENSITIVE_DEFS = {
-    "S1_age_group":     "age_group",
-    "S2_age_exp_pro":   "age_exp_pro",
-    "S3_age_exp_total": "age_exp_total",
-}
-DPD_THRESHOLD = 0.10 
+# SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES, SENSITIVE_DEFS,
+# DPD_THRESHOLD, and PALETTE are all imported from config.py.
 
 
 # SHARED MITIGATION HELPERS
@@ -97,9 +77,32 @@ def reweigh_samples(y: pd.Series, g: pd.Series) -> np.ndarray:
 
 
 def threshold_calibrate(model, X_te: pd.DataFrame,
-                        g_te: pd.Series) -> np.ndarray:
-    y_prob      = model.predict_proba(X_te)[:, 1]
-    global_rate = (y_prob >= 0.5).mean()
+                        g_te: pd.Series,
+                        y_te: pd.Series = None) -> np.ndarray:
+    """
+    Per-group threshold search that equalises positive-prediction rate
+    to the GLOBAL POSITIVE LABEL RATE in the test set.
+
+    FIX (was: used (y_prob >= 0.5).mean() as the calibration target,
+    which is the predicted-positive rate at the default threshold, not
+    the true positive rate.  For imbalanced datasets like Adult -- where
+    ~24% of rows are labelled positive but ~30%+ may be predicted
+    positive at 0.5 -- this pushed every group's threshold in the wrong
+    direction.  Using y_te.mean() as the target correctly anchors
+    calibration to the observed label prevalence):
+
+    If y_te is not supplied the function falls back to the old behaviour
+    (predicted rate at 0.5) for backward compatibility in call sites
+    that don't yet pass labels.
+    """
+    y_prob = model.predict_proba(X_te)[:, 1]
+
+    # Use true label prevalence as the calibration target when available.
+    if y_te is not None:
+        global_rate = float(np.asarray(y_te).mean())
+    else:
+        # Fallback: predicted positive rate at default threshold.
+        global_rate = float((y_prob >= 0.5).mean())
 
     y_pred = np.zeros(len(y_prob), dtype=int)
     for grp in np.unique(g_te):
@@ -186,7 +189,7 @@ class SOMitigation:
             auc_rw  = roc_auc_score(y_te, xgb_rw.predict_proba(X_te)[:, 1])
             dpd_rw  = _max_gap(y_rw, g_te.values)
 
-            y_to   = threshold_calibrate(base_model, X_te, g_te)
+            y_to   = threshold_calibrate(base_model, X_te, g_te, y_te=y_te)
             auc_to = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
             dpd_to = _max_gap(y_to, g_te.values)
 
@@ -261,7 +264,7 @@ class FCCMitigation:
             y_te, y_rw, sensitive_features=g_bin_te
         )))
 
-        y_to   = threshold_calibrate(base_model, X_te, g_te)
+        y_to   = threshold_calibrate(base_model, X_te, g_te, y_te=y_te)
         auc_to = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
         dpd_to = abs(float(demographic_parity_difference(
             y_te, y_to, sensitive_features=g_bin_te
@@ -339,7 +342,7 @@ class AdultMitigation:
             y_te, y_rw, sensitive_features=g_bin_te
         )))
 
-        y_to   = threshold_calibrate(base_model, X_te, g_te)
+        y_to   = threshold_calibrate(base_model, X_te, g_te, y_te=y_te)
         auc_to = roc_auc_score(y_te, base_model.predict_proba(X_te)[:, 1])
         dpd_to = abs(float(demographic_parity_difference(
             y_te, y_to, sensitive_features=g_bin_te

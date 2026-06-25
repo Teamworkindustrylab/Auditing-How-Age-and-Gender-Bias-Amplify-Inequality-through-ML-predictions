@@ -56,6 +56,11 @@ import seaborn as sns
 
 from sklearn.model_selection import train_test_split
 
+from config import (
+    SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES,
+    DPD_THRESHOLD, PALETTE,
+)
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -66,38 +71,8 @@ OUT     = "outputs"
 MDL_DIR = "outputs/models"
 os.makedirs(OUT, exist_ok=True)
 
-PALETTE = {
-    "so":    "#f48024",
-    "fcc":   "#0a0a23",
-    "adult": "#2e7d32",
-    "ok":    "#27ae60",
-    "bad":   "#e74c3c",
-    "bg":    "#fafafa",
-}
-
-SO_BASE_FEATURES = [
-    "ed_level_enc", "is_employed", "is_remote", "is_student",
-    "years_code", "years_code_pro",
-]
-FCC_FEATURE_COLS = [
-    "months_programming",
-    "hours_learning_per_week",
-    "num_learning_resources",
-    "attended_bootcamp",
-    "is_under_employed",
-    "is_ethnic_minority",
-    "has_degree",
-    "is_high_income_country",
-    "log_expected_earning",
-]
-ADULT_BASE_FEATURES = [
-    "education_num", "hours_per_week",
-    "log_capital_gain", "log_capital_loss",
-    "is_married", "is_government_employee", "is_self_employed",
-    "is_us",
-]
-
-DPD_THRESHOLD = 0.10
+# SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES, DPD_THRESHOLD,
+# and PALETTE are all imported from config.py.
 
 
 # Reference single-attribute DPDs are READ from NB3's results files
@@ -186,7 +161,28 @@ def save_results(pos_rates, max_dpd, worst_pair, compounding,
     print(f"  Saved: {path}")
 
 
-def bar_chart(pos_rates, max_dpd, title, dataset_color, out_path):
+def bar_chart(pos_rates, max_dpd, title, dataset_color, out_path,
+              highlight_fn=None):
+    """
+    Horizontal bar chart of positive-prediction rates by subgroup.
+
+    FIX (was: hardcoded 'young' and 'woman' as the only highlighted
+    terms, which coloured SO's 'experienced' bars and Adult's
+    'junior'/'mid'/'senior' bars in the wrong colour):
+
+    highlight_fn is now a callable that takes a subgroup label string
+    and returns True if that subgroup should use dataset_color (the
+    disadvantaged / minority group), or False for the neutral grey.
+
+    Defaults to highlighting any subgroup containing 'young', 'junior',
+    or 'woman' -- the three disadvantaged-group markers used across SO,
+    FCC, and Adult respectively.
+    """
+    if highlight_fn is None:
+        def highlight_fn(sg: str) -> bool:
+            sg_l = sg.lower()
+            return any(kw in sg_l for kw in ("young", "junior", "woman"))
+
     sgs   = sorted(pos_rates.keys())
     rates = [pos_rates[sg] for sg in sgs]
 
@@ -194,8 +190,7 @@ def bar_chart(pos_rates, max_dpd, title, dataset_color, out_path):
                            facecolor=PALETTE["bg"])
     ax.set_facecolor(PALETTE["bg"])
 
-    colors = [dataset_color if "young" in sg or "woman" in sg
-              else "#888888" for sg in sgs]
+    colors = [dataset_color if highlight_fn(sg) else "#888888" for sg in sgs]
     bars = ax.barh(sgs, rates, color=colors, alpha=0.85,
                    edgecolor="white", linewidth=0.8)
 
@@ -278,6 +273,7 @@ def so_intersectional():
         "SO 2024 -- Salary Prediction Rate\nby Age x Experience Subgroup",
         PALETTE["so"],
         os.path.join(OUT, "nb6_so_intersectional_dpd.png"),
+        highlight_fn=lambda sg: "young" in sg.lower(),
     )
     return so_pos_rates
 
@@ -342,6 +338,7 @@ def fcc_intersectional():
         "FCC 2018 -- Working-as-Developer Rate\nby Gender x Experience Subgroup",
         PALETTE["fcc"],
         os.path.join(OUT, "nb6_fcc_intersectional_dpd.png"),
+        highlight_fn=lambda sg: "woman" in sg.lower(),
     )
     return fcc_pos_rates
 
@@ -408,6 +405,7 @@ def adult_intersectional():
         "UCI Adult -- >$50K Prediction Rate\nby Gender x Age Bracket Subgroup",
         PALETTE["adult"],
         os.path.join(OUT, "nb6_adult_intersectional_dpd.png"),
+        highlight_fn=lambda sg: "woman" in sg.lower(),
     )
     return adult_pos_rates
 

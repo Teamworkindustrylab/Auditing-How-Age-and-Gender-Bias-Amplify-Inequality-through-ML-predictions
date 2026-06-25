@@ -75,6 +75,11 @@ from sklearn.metrics         import roc_auc_score
 from xgboost                 import XGBClassifier
 from fairlearn.metrics       import demographic_parity_difference
 
+from config import (
+    SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES,
+    DPD_THRESHOLD, PALETTE,
+)
+
 warnings.filterwarnings("ignore")
 np.random.seed(42)
 
@@ -85,33 +90,9 @@ OUT      = "outputs"
 MDL_DIR  = "outputs/models"
 os.makedirs(OUT, exist_ok=True)
 
-PALETTE = {"so": "#f48024", "fcc": "#0a0a23", "adult": "#2e7d32",
-           "ok": "#27ae60", "bad": "#e74c3c", "bg": "#fafafa"}
-
-DPD_THRESHOLD = 0.10
-N_BOOTSTRAP   = 1000
-
-SO_BASE_FEATURES = [
-    "ed_level_enc", "is_employed", "is_remote", "is_student",
-    "years_code", "years_code_pro",
-]
-FCC_FEATURE_COLS = [
-    "months_programming",
-    "hours_learning_per_week",
-    "num_learning_resources",
-    "attended_bootcamp",
-    "is_under_employed",
-    "is_ethnic_minority",
-    "has_degree",
-    "is_high_income_country",
-    "log_expected_earning",
-]
-ADULT_BASE_FEATURES = [
-    "education_num", "hours_per_week",
-    "log_capital_gain", "log_capital_loss",
-    "is_married", "is_government_employee", "is_self_employed",
-    "is_us",
-]
+# SO_BASE_FEATURES, FCC_FEATURE_COLS, ADULT_BASE_FEATURES, DPD_THRESHOLD,
+# and PALETTE are all imported from config.py.
+N_BOOTSTRAP = 1000
 
 
 # SHARED HELPERS
@@ -643,10 +624,17 @@ def run_subgroup_reweigh_so() -> dict | None:
     isec_base = _max_pairwise_gap(y_base, g_te)
     isec_rw   = _max_pairwise_gap(y_rw,   g_te)
 
-    # Single-axis: strip off the experience suffix to recover age axis
+    # Single-axis DPD: recover the age axis by stripping the experience
+    # suffix (e.g. 'experienced_senior' -> 'experienced').
+    # FIX (was: checked for 'older' which is not a label produced by
+    # config.classify_age; the fallback then binarised by comparing
+    # against the first unique value, whose order is non-deterministic
+    # and could flip the DPD sign):
+    # classify_age() always returns 'young' or 'experienced', so we
+    # check for 'experienced' directly and never fall through to the
+    # unreliable fallback.
     age_te = g_te.str.split("_").str[0]
-    age_bin = (age_te == "older").astype(int) if "older" in age_te.unique() \
-              else (age_te.astype(str) != age_te.unique()[0]).astype(int)
+    age_bin = (age_te == "experienced").astype(int)
     single_base = abs(float(demographic_parity_difference(
         y_te, y_base, sensitive_features=age_bin
     )))
