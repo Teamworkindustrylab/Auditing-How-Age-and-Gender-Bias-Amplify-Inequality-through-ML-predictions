@@ -1,0 +1,27 @@
+
+## Step 1 
+
+Install 
+
+```bash
+Run requrements.txt to install dependencies:  
+
+pip install -r requirements.txt 
+
+##Step 2 
+
+Order of run: 
+python 01_preprocessing.py
+python 02_feature_engineering.py
+python 03_bias_amplification.py
+python 04_shap_explainability.py
+python 05_mitigation_compliance.py
+python 06_intersectional_analysis.py
+python 07_cross_dataset_synthesis.py
+python 08_sensitivity_bootstrap.py
+
+Or simply our orchestration file: `python pipeline.py` to run all eight in order.
+ 
+##Step 3 
+
+Read Findings.md and presentation.ipynb , as there or main findings live, without and with visualization, respectivelly
