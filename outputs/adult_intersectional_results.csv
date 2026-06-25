@@ -1,0 +1,7 @@
+subgroup,positive_pred_rate,intersectional_max_dpd,worst_pair,single_attr_dpd_ref,compounding_gap,meets_threshold
+man_junior,0.042286,0.170943,man_senior vs woman_junior,0.095609,0.075334,False
+man_mid,0.193485,0.170943,man_senior vs woman_junior,0.095609,0.075334,False
+man_senior,0.20271,0.170943,man_senior vs woman_junior,0.095609,0.075334,False
+woman_junior,0.031767,0.170943,man_senior vs woman_junior,0.095609,0.075334,False
+woman_mid,0.083473,0.170943,man_senior vs woman_junior,0.095609,0.075334,False
+woman_senior,0.061761,0.170943,man_senior vs woman_junior,0.095609,0.075334,False

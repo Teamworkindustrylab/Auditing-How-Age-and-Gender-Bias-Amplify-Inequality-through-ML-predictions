@@ -1,0 +1,16 @@
+,dtype,n_unique,null_pct
+age,int64,74,0.0
+workclass,object,9,5.73
+fnlwgt,int64,28523,0.0
+education,object,16,0.0
+education_num,int64,16,0.0
+marital_status,object,7,0.0
+occupation,object,15,5.75
+relationship,object,6,0.0
+race,object,5,0.0
+sex,object,2,0.0
+capital_gain,int64,123,0.0
+capital_loss,int64,99,0.0
+hours_per_week,int64,96,0.0
+native_country,object,42,1.75
+income,object,2,0.0
